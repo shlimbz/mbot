@@ -67,11 +67,16 @@
   .btn{ margin-top:22px; display:inline-block; width:100%; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:19px; letter-spacing:2px; color:#0a0b12; background:linear-gradient(180deg, var(--gold), #d19f10); border:none; border-radius:10px; padding:14px 40px; box-shadow:0 6px 0 #93700a, 0 10px 24px rgba(240,196,25,0.25); pointer-events:auto; cursor:pointer; }
   .btn:active{transform:translateY(4px); box-shadow:0 2px 0 #93700a;}
   .btn.secondary{ background:linear-gradient(180deg,#2b3348,#171b2b); color:var(--text); box-shadow:0 6px 0 #0b0d16, 0 10px 24px rgba(0,0,0,.35); margin-top:12px; }
+  .btn.ghost{ background:transparent; color:var(--text-dim); box-shadow:none; border:1px solid var(--panel-border); font-size:14px; padding:10px; margin-top:14px; }
   .rules{ text-align:left; margin-top:16px; font-size:12.5px; color:var(--text-dim); line-height:1.85; }
   .rules b{color:var(--text);}
   .stat-row{ display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim); margin:6px 0; border-bottom:1px dashed var(--panel-border); padding-bottom:6px; }
   .stat-row b{color:var(--gold); font-family:'Rajdhani',sans-serif; font-size:17px;}
-  .go-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:30px; color:var(--crimson-glow); letter-spacing:2px; margin:0 0 18px 0; }
+  .go-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:28px; color:var(--crimson-glow); letter-spacing:2px; margin:0 0 14px 0; }
+  .section-label{ text-align:left; font-size:11.5px; color:var(--text-dim); letter-spacing:1.5px; margin-top:16px; }
+  .test-grid{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .test-opt{ flex:1 1 56px; padding:11px 6px; border-radius:9px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.06); color:var(--text); font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px; cursor:pointer; pointer-events:auto; }
+  .test-opt:active{ background:rgba(240,196,25,0.25); }
 
   #finisherBanner{ position:fixed; left:50%; top:36%; transform:translate(-50%,-50%) scale(0.6); font-family:'Rajdhani',sans-serif; font-weight:700; font-size:14vw; color:var(--gold); text-shadow:0 0 30px rgba(240,196,25,0.85), 0 0 60px rgba(239,43,77,0.5); opacity:0; pointer-events:none; z-index:15; letter-spacing:2px; white-space:nowrap; }
   #vignette{ position:fixed; inset:0; pointer-events:none; z-index:10; box-shadow: inset 0 0 0 rgba(239,43,77,0); transition: box-shadow .35s ease-out; }
@@ -82,6 +87,14 @@
   #rotateWarn .icon{font-size:52px; animation:rot 1.6s ease-in-out infinite;}
   @keyframes rot{ 0%,100%{transform:rotate(0deg);} 50%{transform:rotate(90deg);} }
   #rotateWarn p{color:var(--text-dim); font-size:14px; margin:0;}
+
+  /* ---------- Dev Test HUD ---------- */
+  #testHUD{ position:fixed; inset:0; pointer-events:none; padding: max(14px, env(safe-area-inset-top)) 14px 0 14px; display:none; z-index:8; }
+  #testPanel{ pointer-events:auto; text-align:left; }
+  #testPanel .row1{ display:flex; justify-content:space-between; align-items:center; gap:8px; }
+  #testConfigLabel{ color:var(--gold); font-size:15px; }
+  #testStatsLine{ font-size:13px; margin-top:8px; color:var(--text); line-height:1.6; }
+  #testDebugLine{ font-size:11.5px; margin-top:4px; color:var(--text-dim); line-height:1.7; white-space:pre-line; }
 </style>
 </head>
 <body>
@@ -108,6 +121,20 @@
   </div>
 </div>
 
+<div id="testHUD">
+  <div class="hud-chip" id="testPanel" style="width:100%;">
+    <div class="row1">
+      <b class="num" id="testConfigLabel">테스트</b>
+      <div style="display:flex; gap:6px;">
+        <button class="icon-btn" id="testResetBtn" style="width:32px;height:32px;font-size:14px;">↺</button>
+        <button class="icon-btn" id="testExitBtn" style="width:32px;height:32px;font-size:14px;">✕</button>
+      </div>
+    </div>
+    <div class="num" id="testStatsLine"></div>
+    <div id="testDebugLine"></div>
+  </div>
+</div>
+
 <div class="overlay" id="titleScreen">
   <div class="panel">
     <h1 class="title-mark">BLADE <span>RUSH</span></h1>
@@ -128,6 +155,23 @@
       <div>거리가 늘어날수록 패턴/원의 개수가 많아집니다. 여러 적을 연속으로 클린하면 <b>피니셔</b>가 터집니다.</div>
     </div>
     <button class="btn" id="startBtn">달리기 시작</button>
+    <button class="btn ghost" id="openTestBtn">🛠 테스트 모드 (개발자)</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="testMenuScreen">
+  <div class="panel">
+    <div class="go-title">테스트 메뉴</div>
+    <div class="rules" style="margin-top:0;">
+      <div>패턴 종류를 선택하면 체력/점수 없이 해당 패턴만 계속 반복 등장합니다. 판정 정확도를 검증해보세요.</div>
+    </div>
+    <div class="section-label">블레이드 (방향 스와이프 패턴)</div>
+    <div class="test-grid" id="bladeGrid"></div>
+    <div class="section-label">오브 (순서대로 원 터치)</div>
+    <div class="test-grid" id="orbGrid"></div>
+    <div class="section-label">보스</div>
+    <div class="test-grid" id="bossGrid"></div>
+    <button class="btn secondary" id="testBackBtn">뒤로</button>
   </div>
 </div>
 
@@ -168,9 +212,8 @@ const PLAYER_MAX_HP = 100;
 const TAP_TARGET_RADIUS = 60;
 const SWIPE_MIN_DIST = 22;
 const EARLY_SAMPLE_DIST = 14;
-const REVERSAL_REJECT_STEPS = 3; // >=135 degrees apart = treated as a reversed/invalid gesture
+const REVERSAL_REJECT_STEPS = 3;
 
-/* ---- 3rd-person perspective (Temple-Run style, behind-character view) ---- */
 const HORIZON_Y_RATIO = 0.34;
 const CONTACT_Y_RATIO = 0.80;
 const EASE_POW = 2.25;
@@ -206,7 +249,7 @@ resize();
 
 /* ============================== STATE ============================== */
 
-let gameState = 'title'; // title | playing | paused | gameover
+let gameState = 'title'; // title | playing | paused | gameover | testing
 let score = 0, distance = 0, combo = 0, maxCombo = 0, hp = PLAYER_MAX_HP;
 let bestScore = 0;
 try { bestScore = parseInt(localStorage.getItem('bladerush_best')||'0',10) || 0; } catch(e){ bestScore = 0; }
@@ -235,6 +278,14 @@ let playerAnim = { bob:0, slashT:-1, hitT:-1 };
 let running = false;
 let lastFrameReal = 0;
 
+/* ---- developer test mode ---- */
+let testState = {
+  active:false,
+  config:{type:'blade', len:1},
+  stats:{attempts:0, perfect:0, good:0, late:0, miss:0, wrong:0},
+  lastDebug:{}
+};
+
 /* ============================== UTIL ============================== */
 
 function rand(a,b){ return a + Math.random()*(b-a); }
@@ -260,9 +311,6 @@ function posForU(u){
 }
 
 /* ============================== ENEMY GENERATION ============================== */
-/* Two separate families that never mix within one enemy:
-   - "blade" enemies: a sequence of directional swipes (length grows with distance)
-   - "orb" enemies: a sequence of tap-the-circle targets (count grows with distance)   */
 
 function difficultyFactor(){ return clamp(1 - distance/6000, 0.72, 1); }
 
@@ -290,8 +338,8 @@ function baseRuntime(){
   return { stepIndex:0, state:'queued', tapTarget:null, deathT:0, phase:'approach', approachTimer:0, xJitter: rand(-14,14), uAtResolve:0 };
 }
 
-function makeBladeEnemy(){
-  const len = bladeLen();
+function makeBladeEnemy(lenOverride){
+  const len = lenOverride || bladeLen();
   const flavor = bladeFlavor(len);
   const pattern = [];
   for(let i=0;i<len;i++){
@@ -307,8 +355,8 @@ function makeBladeEnemy(){
   });
 }
 
-function makeOrbEnemy(){
-  const n = orbCount();
+function makeOrbEnemy(nOverride){
+  const n = nOverride || orbCount();
   const flavor = orbFlavor(n);
   const pattern = new Array(n).fill('tap');
   const tl = Math.max(1.3, (0.78*n + 0.6) * difficultyFactor());
@@ -352,8 +400,11 @@ function startGame(){
   resetGame();
   gameState='playing';
   document.getElementById('titleScreen').classList.add('hidden');
+  document.getElementById('testMenuScreen').classList.add('hidden');
   document.getElementById('gameOverScreen').classList.add('hidden');
   document.getElementById('pauseScreen').classList.add('hidden');
+  document.getElementById('testHUD').style.display='none';
+  document.getElementById('hud').style.display='';
   setPauseBtnVisible(true);
   lastFrameReal = now();
   try{
@@ -398,11 +449,114 @@ function quitToMenu(){
   setPauseBtnVisible(false);
   document.getElementById('pauseScreen').classList.add('hidden');
   document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('testHUD').style.display='none';
+  document.getElementById('hud').style.display='';
   document.getElementById('titleScreen').classList.remove('hidden');
   resetGame();
 }
 
-/* ============================== SPAWNING ============================== */
+/* ============================== DEV TEST MODE ============================== */
+
+function resetTestStats(){
+  testState.stats = {attempts:0, perfect:0, good:0, late:0, miss:0, wrong:0};
+  testState.lastDebug = {};
+}
+
+function buildTestMenu(){
+  const bladeGrid = document.getElementById('bladeGrid');
+  const orbGrid = document.getElementById('orbGrid');
+  const bossGrid = document.getElementById('bossGrid');
+  bladeGrid.innerHTML=''; orbGrid.innerHTML=''; bossGrid.innerHTML='';
+  for(let len=1; len<=5; len++){
+    const b = document.createElement('button');
+    b.className='test-opt'; b.textContent = len+'단계';
+    b.addEventListener('click', ()=>startTest('blade', len));
+    bladeGrid.appendChild(b);
+  }
+  for(let n=3; n<=6; n++){
+    const b = document.createElement('button');
+    b.className='test-opt'; b.textContent = n+'개';
+    b.addEventListener('click', ()=>startTest('orb', n));
+    orbGrid.appendChild(b);
+  }
+  const bossBtn = document.createElement('button');
+  bossBtn.className='test-opt'; bossBtn.style.flex='1 1 100%';
+  bossBtn.textContent='보스 패턴 (6~8단계)';
+  bossBtn.addEventListener('click', ()=>startTest('boss', 0));
+  bossGrid.appendChild(bossBtn);
+}
+
+function openTestMenu(){
+  document.getElementById('titleScreen').classList.add('hidden');
+  document.getElementById('testMenuScreen').classList.remove('hidden');
+}
+function closeTestMenu(){
+  document.getElementById('testMenuScreen').classList.add('hidden');
+  document.getElementById('titleScreen').classList.remove('hidden');
+}
+
+function startTest(type, len){
+  resetTestStats();
+  testState.active = true;
+  testState.config = {type, len};
+  gameState = 'testing';
+
+  document.getElementById('titleScreen').classList.add('hidden');
+  document.getElementById('testMenuScreen').classList.add('hidden');
+  document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('pauseScreen').classList.add('hidden');
+  document.getElementById('hud').style.display='none';
+  document.getElementById('testHUD').style.display='block';
+
+  const label = type==='blade' ? `블레이드 · ${len}단계` : type==='orb' ? `오브 · ${len}개` : '보스 패턴';
+  document.getElementById('testConfigLabel').textContent = label;
+
+  activeEnemy=null; queue=[]; dyingEnemies=[]; particles=[]; floatingTexts=[];
+  playerAnim={bob:0, slashT:-1, hitT:-1};
+
+  spawnTestEnemy();
+  updateTestHUD();
+  lastFrameReal = now();
+  if(!running){ running=true; requestAnimationFrame(loop); }
+}
+
+function spawnTestEnemy(){
+  let e;
+  if(testState.config.type==='blade') e = makeBladeEnemy(testState.config.len);
+  else if(testState.config.type==='orb') e = makeOrbEnemy(testState.config.len);
+  else e = makeBossRuntime();
+  e.state='active'; e.phase='approach'; e.approachTimer=e.approachDuration; e.stepIndex=0; e.timer=e.timeLimit;
+  activeEnemy = e;
+}
+
+function exitTest(){
+  testState.active = false;
+  gameState = 'title';
+  activeEnemy=null; queue=[]; dyingEnemies=[]; particles=[]; floatingTexts=[];
+  document.getElementById('testHUD').style.display='none';
+  document.getElementById('hud').style.display='';
+  document.getElementById('titleScreen').classList.remove('hidden');
+}
+
+function updateTestHUD(){
+  const s = testState.stats;
+  const total = s.attempts;
+  const succ = s.perfect+s.good+s.late;
+  const acc = total ? Math.round(succ/total*100) : 0;
+  document.getElementById('testStatsLine').textContent =
+    `시도 ${total}  ·  성공 ${succ} (P${s.perfect} / G${s.good} / L${s.late})  ·  실패 ${s.miss+s.wrong} (Miss ${s.miss} / Wrong ${s.wrong})  ·  정확도 ${acc}%`;
+  const d = testState.lastDebug || {};
+  const fmt = k => k ? (DIR_ICON[k] || k) : '-';
+  document.getElementById('testDebugLine').textContent =
+    `마지막 입력 → 기대: ${fmt(d.expected)}   인식: ${fmt(d.dir)}   초기방향: ${fmt(d.earlyDir)}   각도차(45°단위): ${d.diff!=null? d.diff : '-'}   결과: ${d.result || '-'}`;
+}
+
+document.getElementById('openTestBtn').addEventListener('click', ()=>{ buildTestMenu(); openTestMenu(); });
+document.getElementById('testBackBtn').addEventListener('click', closeTestMenu);
+document.getElementById('testExitBtn').addEventListener('click', exitTest);
+document.getElementById('testResetBtn').addEventListener('click', ()=>{ resetTestStats(); updateTestHUD(); });
+
+/* ============================== SPAWNING (normal run) ============================== */
 
 function spawnWave(){
   const bossMile = Math.floor(distance/500);
@@ -499,8 +653,14 @@ function spawnFloatText(x,y,text,color){ floatingTexts.push({x,y,text,color,life
 /* ============================== INPUT ============================== */
 
 function onGestureInput(dir, releasePos){
-  if(gameState!=='playing' || !activeEnemy || activeEnemy.phase!=='active') return;
-  if(dir==='__invalid__'){ failEnemy('wrong'); return; }
+  if(gameState!=='playing' && gameState!=='testing') return;
+  if(!activeEnemy || activeEnemy.phase!=='active') return;
+
+  if(dir==='__invalid__'){
+    if(testState.active) testState.lastDebug.result = 'INVALID (방향반전)';
+    failEnemy('wrong');
+    return;
+  }
   const step = activeEnemy.pattern[activeEnemy.stepIndex];
   let ok = false;
   if(step==='tap'){
@@ -509,6 +669,9 @@ function onGestureInput(dir, releasePos){
       ok = dd <= TAP_TARGET_RADIUS;
     }
   } else { ok = (dir===step); }
+
+  if(testState.active) testState.lastDebug.result = ok ? 'MATCH' : 'MISMATCH';
+
   if(ok) advanceStep(); else failEnemy('wrong');
 }
 
@@ -539,52 +702,74 @@ function succeedEnemy(){
   const ratio = clamp(used / e.timeLimit, 0, 1);
   const judge = judgementFor(ratio);
 
-  const mult = 1 + Math.floor(combo/5)*0.1;
-  score += e.scoreVal * judge.mult * mult;
-  combo++;
-  if(combo>maxCombo) maxCombo=combo;
-  if(wave) wave.usedTime += used;
-
   const pos = currentEnemyScreenPos(e);
   spawnParticles(pos.x,pos.y, judge.color, e.isBoss?36:18);
   spawnFloatText(pos.x,pos.y-40*pos.scale-10, judge.label, judge.color);
   playerAnim.slashT = 0;
   if(judge.label==='PERFECT') flashScreen('white');
 
+  if(testState.active){
+    testState.stats.attempts++;
+    if(judge.label==='PERFECT') testState.stats.perfect++;
+    else if(judge.label==='GOOD') testState.stats.good++;
+    else testState.stats.late++;
+    updateTestHUD();
+  } else {
+    const mult = 1 + Math.floor(combo/5)*0.1;
+    score += e.scoreVal * judge.mult * mult;
+    combo++;
+    if(combo>maxCombo) maxCombo=combo;
+    if(wave) wave.usedTime += used;
+    updateHUD();
+  }
+
   e.state='dead-success'; e.phase='dead'; e.deathT=0; e.uAtResolve=pos.u;
   dyingEnemies.push(e);
-
   activeEnemy = null;
-  setTimeout(()=>{ if(gameState==='playing') activateNext(); }, e.isBoss?260:140);
-  updateHUD();
+
+  if(testState.active){
+    setTimeout(()=>{ if(gameState==='testing') spawnTestEnemy(); }, 260);
+  } else {
+    setTimeout(()=>{ if(gameState==='playing') activateNext(); }, e.isBoss?260:140);
+  }
 }
 
 function failEnemy(kind){
   const e = activeEnemy;
   if(!e) return;
-  const dmg = e.dmg * (kind==='wrong'?1.35:1);
-  hp = clamp(hp - dmg, 0, PLAYER_MAX_HP);
-  combo = 0;
-  if(wave) wave.allGood=false;
 
   const pos = currentEnemyScreenPos(e);
   spawnFloatText(pos.x,pos.y-40*pos.scale-10, kind==='wrong'?'WRONG':'MISS', '#ef2b4d');
   playerAnim.hitT = 0;
-  damageVignette();
+
+  if(testState.active){
+    testState.stats.attempts++;
+    if(kind==='wrong') testState.stats.wrong++; else testState.stats.miss++;
+    updateTestHUD();
+  } else {
+    const dmg = e.dmg * (kind==='wrong'?1.35:1);
+    hp = clamp(hp - dmg, 0, PLAYER_MAX_HP);
+    combo = 0;
+    if(wave) wave.allGood=false;
+    damageVignette();
+    updateHUD();
+  }
 
   e.state='dead-fail'; e.phase='dead'; e.deathT=0; e.uAtResolve=pos.u;
   dyingEnemies.push(e);
-
   activeEnemy = null;
-  updateHUD();
 
+  if(testState.active){
+    setTimeout(()=>{ if(gameState==='testing') spawnTestEnemy(); }, 260);
+    return;
+  }
   if(hp<=0){ setTimeout(gameOver, 260); return; }
   setTimeout(()=>{ if(gameState==='playing') activateNext(); }, 200);
 }
 
 /* ---- pointer handlers ---- */
 function pointerDown(x,y){
-  if(gameState!=='playing') return;
+  if(gameState!=='playing' && gameState!=='testing') return;
   pointerActive=true; startX=x; startY=y; startT=now(); trail=[{x,y,t:startT}]; earlyDir=null;
 }
 function pointerMove(x,y){
@@ -601,10 +786,21 @@ function pointerUp(x,y){
   const dx=x-startX, dy=y-startY, dist=Math.hypot(dx,dy);
   const dir = getGestureDirection(dx,dy,dist);
   lastTapPos = {x,y};
+
+  let diff=null, invalid=false;
   if(dir!=='tap' && earlyDir && earlyDir!=='tap'){
-    const diff = circularDiff(dirIndex(earlyDir), dirIndex(dir));
-    if(diff>=REVERSAL_REJECT_STEPS){ onGestureInput('__invalid__', lastTapPos); return; }
+    diff = circularDiff(dirIndex(earlyDir), dirIndex(dir));
+    if(diff>=REVERSAL_REJECT_STEPS) invalid = true;
   }
+
+  if(testState.active){
+    testState.lastDebug = {
+      expected: (activeEnemy && activeEnemy.phase==='active') ? activeEnemy.pattern[activeEnemy.stepIndex] : null,
+      dir, earlyDir, diff
+    };
+  }
+
+  if(invalid){ onGestureInput('__invalid__', lastTapPos); return; }
   onGestureInput(dir, lastTapPos);
 }
 canvas.addEventListener('pointerdown', e=>{ e.preventDefault(); pointerDown(e.clientX,e.clientY); }, {passive:false});
@@ -639,12 +835,13 @@ function update(dtReal){
   timeScale = slomoActive ? 0.32 : 1;
   const dt = dtReal * timeScale;
 
-  if(gameState==='playing'){
-    distance += dt * 16;
+  if(gameState==='playing' || gameState==='testing'){
+    if(gameState==='playing'){
+      distance += dt * 16;
+      spawnCooldown -= dt;
+      if(spawnCooldown<=0 && !wave) spawnWave();
+    }
     playerAnim.bob += dt*8;
-
-    spawnCooldown -= dt;
-    if(spawnCooldown<=0 && !wave) spawnWave();
 
     if(activeEnemy){
       if(activeEnemy.phase==='approach'){
@@ -664,7 +861,7 @@ function update(dtReal){
     if(playerAnim.slashT>=0){ playerAnim.slashT += dtReal*3.2; if(playerAnim.slashT>1) playerAnim.slashT=-1; }
     if(playerAnim.hitT>=0){ playerAnim.hitT += dtReal*3.2; if(playerAnim.hitT>1) playerAnim.hitT=-1; }
 
-    updateHUD();
+    if(gameState==='playing') updateHUD();
   }
 
   for(let i=dyingEnemies.length-1;i>=0;i--){
@@ -821,8 +1018,6 @@ function drawEnemyAt(e, x, y, scale, alpha){
   ctx.restore();
 }
 
-/* ---- fixed, large on-screen pattern readout ---- */
-
 function drawPatternUI(e){
   const n = e.pattern.length;
   const zoneW = W*0.90;
@@ -967,7 +1162,7 @@ function drawFloatingTexts(){
 function render(){
   ctx.clearRect(0,0,W,H);
   drawBackground();
-  if(gameState==='playing' || gameState==='gameover'){
+  if(gameState==='playing' || gameState==='gameover' || gameState==='testing'){
     drawQueuedPreview();
     drawDyingEnemies();
     if(activeEnemy) drawActiveEnemy();
