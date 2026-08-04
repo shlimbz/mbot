@@ -166,11 +166,12 @@
     <div class="rules" style="margin-top:0;">
       <div>패턴 종류를 선택하면 체력/점수 없이 해당 패턴만 계속 반복 등장합니다. 판정 정확도를 검증해보세요.</div>
     </div>
-    <div class="section-label">블레이드 (방향 스와이프 + 원 그리기)</div>
+    <button class="btn" id="testFinisherBtn" style="margin-top:10px;">⚡ 피니셔 시스템 테스트</button>
+    <div class="section-label" style="margin-top:14px;">블레이드 (방향 스와이프 + 원 그리기)</div>
     <div class="test-grid" id="bladeGrid"></div>
     <div class="section-label">오브 (숫자 원 순서대로 탭)</div>
     <div class="test-grid" id="orbGrid"></div>
-    <div class="section-label">특수</div>
+    <div class="section-label">보스</div>
     <div class="test-grid" id="specialGrid"></div>
     <button class="btn secondary" id="testBackBtn">뒤로</button>
   </div>
@@ -643,9 +644,10 @@ function startGame(checkpoint){
   setPauseBtnVisible(true);
   updateHUD();
   lastFrameReal = now();
+  // NOTE: intentionally NOT calling requestFullscreen() — on mobile browsers
+  // (especially iOS Safari) it's unreliable and was hiding the HUD entirely.
+  // The fixed-position, viewport-fit=cover CSS already fills the screen edge-to-edge.
   try{
-    const root = document.documentElement;
-    if(root.requestFullscreen) root.requestFullscreen().catch(()=>{});
     if(screen.orientation && screen.orientation.lock) screen.orientation.lock('portrait').catch(()=>{});
   }catch(e){}
   if(!running){ running=true; requestAnimationFrame(loop); }
@@ -722,12 +724,6 @@ function buildTestMenu(){
   bossBtn.textContent='보스 페이즈 (블레이드/오브 랜덤)';
   bossBtn.addEventListener('click', ()=>startTest('boss', 0));
   specialGrid.appendChild(bossBtn);
-
-  const finBtn = document.createElement('button');
-  finBtn.className='test-opt'; finBtn.style.flex='1 1 100%';
-  finBtn.textContent='피니셔 시스템 (다중 웨이브)';
-  finBtn.addEventListener('click', ()=>startTest('finisher', 0));
-  specialGrid.appendChild(finBtn);
 }
 
 function openTestMenu(){
@@ -822,6 +818,7 @@ function updateTestHUD(){
 
 document.getElementById('openTestBtn').addEventListener('click', ()=>{ buildTestMenu(); openTestMenu(); });
 document.getElementById('testBackBtn').addEventListener('click', closeTestMenu);
+document.getElementById('testFinisherBtn').addEventListener('click', ()=>startTest('finisher', 0));
 document.getElementById('testExitBtn').addEventListener('click', exitTest);
 document.getElementById('testResetBtn').addEventListener('click', ()=>{ resetTestStats(); updateTestHUD(); });
 
@@ -1302,9 +1299,31 @@ function drawBackground(){
   sky.addColorStop(0,'#0a0d1e'); sky.addColorStop(1,'#171b30');
   ctx.fillStyle=sky; ctx.fillRect(0,0,W,horizonY);
 
+  // ambient wind streaks — always animating a little so the world never feels static
+  ctx.save();
+  ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1.5;
+  const windOff = (now()/1000*40) % 60;
+  for(let x=-windOff; x<W+60; x+=60){
+    ctx.beginPath();
+    ctx.moveTo(x, horizonY*0.25); ctx.lineTo(x+26, horizonY*0.25);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // far mountain silhouettes (slow parallax layer)
+  ctx.fillStyle='rgba(22,25,44,0.85)';
+  const offFar = (distance*1.1)%160;
+  for(let x=-offFar; x<W+160; x+=160){
+    const h = 24+((Math.sin(x*0.017)+1)/2)*36;
+    ctx.beginPath();
+    ctx.moveTo(x,horizonY); ctx.lineTo(x+52,horizonY-h); ctx.lineTo(x+104,horizonY);
+    ctx.closePath(); ctx.fill();
+  }
+
+  // nearer silhouette layer (faster parallax, sells running speed)
   ctx.fillStyle='rgba(28,32,54,0.9)';
-  const off = (distance*0.4)%140;
-  for(let x=-off; x<W+140; x+=140){
+  const offNear = (distance*2.6)%140;
+  for(let x=-offNear; x<W+140; x+=140){
     const h = 30+((Math.sin(x*0.02)+1)/2)*46;
     ctx.beginPath();
     ctx.moveTo(x,horizonY); ctx.lineTo(x+45,horizonY-h); ctx.lineTo(x+90,horizonY);
@@ -1339,7 +1358,7 @@ function drawRoad(horizonY){
   ctx.clip();
   const tieCount = 14;
   const spacing = 1/tieCount;
-  const scrollOff = (distance*0.09) % spacing;
+  const scrollOff = (distance*0.16) % spacing;
   ctx.strokeStyle='rgba(255,255,255,0.10)'; ctx.lineWidth=2;
   for(let i=-1;i<=tieCount;i++){
     const u = i*spacing + scrollOff;
@@ -1349,6 +1368,21 @@ function drawRoad(horizonY){
     ctx.beginPath();
     ctx.moveTo(cx-halfW, p.y); ctx.lineTo(cx+halfW, p.y);
     ctx.stroke();
+  }
+
+  // roadside marker posts — fast near-layer parallax for a strong sense of speed
+  const postSpacing = 1/8;
+  const postScroll = (distance*0.22) % postSpacing;
+  for(let i=-1;i<=8;i++){
+    const u = i*postSpacing + postScroll;
+    if(u<0.12||u>1) continue;
+    const p = posForU(u);
+    const halfW = topHalf + (botHalf-topHalf)*Math.pow(u,EASE_POW);
+    const postH = 10 + 46*p.scale;
+    [cx-halfW-6*p.scale, cx+halfW+6*p.scale].forEach(px=>{
+      ctx.fillStyle = 'rgba(239,43,77,0.55)';
+      ctx.fillRect(px-1.5*p.scale, p.y-postH, 3*p.scale, postH);
+    });
   }
   ctx.restore();
 }
@@ -1445,6 +1479,34 @@ function drawEnemyAt(e, x, y, scale, alpha){
   ctx.restore();
 }
 
+// Drawn as real vector shapes instead of a Unicode glyph — the ⟳ character has
+// spotty font support on mobile and can render as a generic/invisible glyph,
+// which made it hard to tell apart from the numbered orb circles. This is
+// always crisp and instantly reads as "draw a loop", never a bare circle.
+function drawSpinArrowIcon(size, color){
+  const r = size*0.34;
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = size*0.11;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(0,0,r, -0.35*Math.PI, 1.15*Math.PI, false);
+  ctx.stroke();
+  // arrowhead at the end of the arc
+  const endAngle = 1.15*Math.PI;
+  const ax = Math.cos(endAngle)*r, ay = Math.sin(endAngle)*r;
+  const tangent = endAngle + Math.PI/2;
+  const ah = size*0.16;
+  ctx.beginPath();
+  ctx.moveTo(ax + Math.cos(tangent)*ah, ay + Math.sin(tangent)*ah);
+  ctx.lineTo(ax + Math.cos(endAngle)*ah*0.9, ay + Math.sin(endAngle)*ah*0.9);
+  ctx.lineTo(ax - Math.cos(tangent)*ah*0.15, ay - Math.sin(tangent)*ah*0.15);
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+  ctx.restore();
+}
+
 function isFlickerHidden(e){
   if(!e.flicker) return false;
   // visible ~0.6s, hidden ~0.3s — memorize-then-recall gimmick
@@ -1494,7 +1556,11 @@ function drawPatternUI(e){
     ctx.font=`900 ${big}px Rajdhani, sans-serif`;
     ctx.textAlign='center'; ctx.textBaseline='middle';
     ctx.shadowColor=curColor; ctx.shadowBlur=36;
-    ctx.fillText(DIR_ICON[cur], 0, big*0.05);
+    if(cur==='circle'){
+      drawSpinArrowIcon(big*0.62, '#fff');
+    } else {
+      ctx.fillText(DIR_ICON[cur], 0, big*0.05);
+    }
     ctx.shadowBlur=0;
     ctx.restore();
 
@@ -1505,6 +1571,15 @@ function drawPatternUI(e){
       ctx.font = "700 14px Rajdhani, sans-serif";
       ctx.textAlign='center';
       ctx.fillText(e.shapeName+' 모양', cx, bigY - big*0.56);
+      ctx.restore();
+    }
+    if(cur==='circle'){
+      ctx.save();
+      ctx.globalAlpha = hidden? 0.12 : 0.85;
+      ctx.fillStyle = '#f0c419';
+      ctx.font = "700 14px Rajdhani, sans-serif";
+      ctx.textAlign='center';
+      ctx.fillText('손가락으로 원 그리기', cx, bigY - big*0.56);
       ctx.restore();
     }
 
