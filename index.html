@@ -10,7 +10,7 @@
 <style>
   :root{
     --bg-void:#05060c;
-    --panel:rgba(12,15,26,0.78);
+    --panel:rgba(12,15,26,0.80);
     --panel-border:rgba(139,148,171,0.22);
     --steel:#8a94a6;
     --crimson:#ef2b4d;
@@ -37,18 +37,24 @@
   /* ---------- HUD ---------- */
   #hud{ position:fixed; inset:0; pointer-events:none; padding: max(14px, env(safe-area-inset-top)) 14px 0 14px; }
   #hudTop{ display:flex; justify-content:space-between; align-items:flex-start; }
+  .hud-left{ display:flex; align-items:center; gap:8px; }
   .hud-chip{ background:var(--panel); border:1px solid var(--panel-border); border-radius:10px; padding:6px 12px; backdrop-filter: blur(6px); }
+  .icon-btn{ width:38px; height:38px; padding:0; display:flex; align-items:center; justify-content:center; font-size:17px; pointer-events:auto; cursor:pointer; color:var(--text); }
   #scoreChip .label{font-size:10px; color:var(--text-dim); letter-spacing:1.5px;}
   #scoreChip .val{font-size:22px; color:var(--gold); line-height:1.1;}
   #distChip{text-align:center;}
   #distChip .label{font-size:10px; color:var(--text-dim); letter-spacing:1.5px;}
-  #distChip .val{font-size:18px; color:var(--text); line-height:1.1;}
+  #distChip .val{font-size:19px; color:var(--text); line-height:1.1;}
   #comboChip{text-align:right; opacity:0; transform:translateY(-4px); transition:opacity .15s, transform .15s;}
   #comboChip.show{opacity:1; transform:translateY(0);}
   #comboChip .label{font-size:10px; color:var(--text-dim); letter-spacing:1.5px;}
   #comboChip .val{font-size:22px; color:var(--crimson-glow); line-height:1.1;}
-  #hpWrap{ margin-top:10px; height:9px; border-radius:5px; background:rgba(255,255,255,0.08); border:1px solid var(--panel-border); overflow:hidden; }
+
+  #hpZone{ margin-top:10px; display:flex; align-items:center; gap:8px; }
+  #hpLabel{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; color:var(--crimson-glow); letter-spacing:1px; }
+  #hpWrap{ flex:1; height:16px; border-radius:8px; background:rgba(255,255,255,0.08); border:1px solid var(--panel-border); overflow:hidden; position:relative; }
   #hpBar{ height:100%; width:100%; background:linear-gradient(90deg, var(--danger), var(--crimson-glow)); transition:width .18s ease-out; }
+  #hpNum{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; color:var(--text); min-width:34px; text-align:right; }
 
   /* ---------- Overlays ---------- */
   .overlay{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:radial-gradient(ellipse at 50% 30%, rgba(20,24,42,0.92), rgba(4,5,10,0.97)); z-index:20; }
@@ -58,8 +64,9 @@
   .title-mark span{color:var(--crimson-glow);}
   .title-sub{ font-size:13px; color:var(--text-dim); margin-top:6px; letter-spacing:3px; }
   .compass{margin:22px auto 4px;}
-  .btn{ margin-top:22px; display:inline-block; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:19px; letter-spacing:2px; color:#0a0b12; background:linear-gradient(180deg, var(--gold), #d19f10); border:none; border-radius:10px; padding:14px 40px; box-shadow:0 6px 0 #93700a, 0 10px 24px rgba(240,196,25,0.25); pointer-events:auto; cursor:pointer; }
+  .btn{ margin-top:22px; display:inline-block; width:100%; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:19px; letter-spacing:2px; color:#0a0b12; background:linear-gradient(180deg, var(--gold), #d19f10); border:none; border-radius:10px; padding:14px 40px; box-shadow:0 6px 0 #93700a, 0 10px 24px rgba(240,196,25,0.25); pointer-events:auto; cursor:pointer; }
   .btn:active{transform:translateY(4px); box-shadow:0 2px 0 #93700a;}
+  .btn.secondary{ background:linear-gradient(180deg,#2b3348,#171b2b); color:var(--text); box-shadow:0 6px 0 #0b0d16, 0 10px 24px rgba(0,0,0,.35); margin-top:12px; }
   .rules{ text-align:left; margin-top:16px; font-size:12.5px; color:var(--text-dim); line-height:1.85; }
   .rules b{color:var(--text);}
   .stat-row{ display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim); margin:6px 0; border-bottom:1px dashed var(--panel-border); padding-bottom:6px; }
@@ -70,11 +77,7 @@
   #vignette{ position:fixed; inset:0; pointer-events:none; z-index:10; box-shadow: inset 0 0 0 rgba(239,43,77,0); transition: box-shadow .35s ease-out; }
   #flash{ position:fixed; inset:0; pointer-events:none; z-index:12; background:#fff; opacity:0; }
 
-  #rotateWarn{
-    position:fixed; inset:0; z-index:50; display:none;
-    align-items:center; justify-content:center; flex-direction:column; gap:14px;
-    background:#05060c; text-align:center; padding:24px;
-  }
+  #rotateWarn{ position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; flex-direction:column; gap:14px; background:#05060c; text-align:center; padding:24px; }
   #rotateWarn.show{display:flex;}
   #rotateWarn .icon{font-size:52px; animation:rot 1.6s ease-in-out infinite;}
   @keyframes rot{ 0%,100%{transform:rotate(0deg);} 50%{transform:rotate(90deg);} }
@@ -91,11 +94,18 @@
 
 <div id="hud">
   <div id="hudTop">
-    <div class="hud-chip" id="scoreChip"><div class="label">SCORE</div><div class="val num" id="scoreVal">0</div></div>
-    <div class="hud-chip" id="distChip"><div class="label">DISTANCE</div><div class="val num" id="distVal">0 m</div></div>
+    <div class="hud-left">
+      <button class="hud-chip icon-btn" id="pauseBtn" style="display:none;">⏸</button>
+      <div class="hud-chip" id="scoreChip"><div class="label">SCORE</div><div class="val num" id="scoreVal">0</div></div>
+    </div>
+    <div class="hud-chip" id="distChip"><div class="label">거리</div><div class="val num" id="distVal">0 m</div></div>
     <div class="hud-chip" id="comboChip"><div class="label">COMBO</div><div class="val num" id="comboVal">0</div></div>
   </div>
-  <div id="hpWrap"><div id="hpBar"></div></div>
+  <div id="hpZone">
+    <div id="hpLabel">HP</div>
+    <div id="hpWrap"><div id="hpBar"></div></div>
+    <div id="hpNum">100</div>
+  </div>
 </div>
 
 <div class="overlay" id="titleScreen">
@@ -114,8 +124,8 @@
     </svg>
     <div class="rules">
       <div><b>세로모드</b> 3인칭 시점, 캐릭터는 저절로 달립니다.</div>
-      <div>적이 저 멀리서 달려오다가 <b>공격범위</b>에 들어오면 방향 패턴이 뜹니다. <b>제한시간</b> 안에 화면을 긋거나 탭해 완성하세요.</div>
-      <div>여러 적을 <b>연속으로 클린</b>하면 슬로모션 <b>피니셔</b>가 터집니다.</div>
+      <div>적이 <b>공격범위</b>에 들어오면 방향 패턴이나 순서대로 누를 원(⭕)이 뜹니다. <b>제한시간</b> 안에 완성하세요.</div>
+      <div>거리가 늘어날수록 패턴/원의 개수가 많아집니다. 여러 적을 연속으로 클린하면 <b>피니셔</b>가 터집니다.</div>
     </div>
     <button class="btn" id="startBtn">달리기 시작</button>
   </div>
@@ -129,6 +139,17 @@
     <div class="stat-row"><span>MAX COMBO</span><b class="num" id="finalCombo">0</b></div>
     <div class="stat-row"><span>BEST SCORE</span><b class="num" id="bestScore">0</b></div>
     <button class="btn" id="retryBtn">다시 도전</button>
+    <button class="btn secondary" id="goMenuBtn">메인 메뉴로</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="pauseScreen">
+  <div class="panel">
+    <div class="go-title" style="color:var(--gold)">일시정지</div>
+    <div class="stat-row"><span>SCORE</span><b class="num" id="pauseScore">0</b></div>
+    <div class="stat-row"><span>DISTANCE</span><b class="num" id="pauseDist">0 m</b></div>
+    <button class="btn" id="resumeBtn">계속하기</button>
+    <button class="btn secondary" id="menuBtn">메인 메뉴로</button>
   </div>
 </div>
 
@@ -143,27 +164,19 @@
 const DIR_ICON = { right:'→', downright:'↘', down:'↓', downleft:'↙', left:'←', upleft:'↖', up:'↑', upright:'↗', tap:'○' };
 const DIR_ORDER = ['right','downright','down','downleft','left','upleft','up','upright'];
 
-const ENEMY_TYPES = {
-  soldier:  { name:'일반병', color:'#9aa2b5', pattern:['right'],                     timeLimit:1.55, dmg:8,  score:100, unlock:0 },
-  spearman: { name:'창병',   color:'#4fd1c5', pattern:['down'],                      timeLimit:1.45, dmg:9,  score:110, unlock:0 },
-  assassin: { name:'암살자', color:'#b085f5', pattern:['downright'],                 timeLimit:1.30, dmg:10, score:130, unlock:150 },
-  archer:   { name:'궁수',   color:'#e0c34c', pattern:['left','right'],              timeLimit:1.90, dmg:11, score:160, unlock:300 },
-  mage:     { name:'마법사', color:'#63b3ff', pattern:['tap'],                       timeLimit:1.35, dmg:10, score:140, unlock:450, isTap:true },
-  devil:    { name:'악마',   color:'#ef4459', pattern:['downright','upright'],       timeLimit:2.00, dmg:14, score:200, unlock:650 },
-  bat:      { name:'박쥐',   color:'#8f7fe0', pattern:['tap','tap','tap'],           timeLimit:1.90, dmg:9,  score:150, unlock:800, isTap:true },
-  golem:    { name:'골렘',   color:'#c08552', pattern:['right','down','left','up'],  timeLimit:3.10, dmg:16, score:260, unlock:1000 }
-};
-
 const PLAYER_MAX_HP = 100;
-const TAP_TARGET_RADIUS = 46;
+const TAP_TARGET_RADIUS = 60;
 const SWIPE_MIN_DIST = 22;
+const EARLY_SAMPLE_DIST = 14;
+const REVERSAL_REJECT_STEPS = 3; // >=135 degrees apart = treated as a reversed/invalid gesture
 
 /* ---- 3rd-person perspective (Temple-Run style, behind-character view) ---- */
-const HORIZON_Y_RATIO = 0.34;   // vanishing point
-const CONTACT_Y_RATIO = 0.80;   // where enemies reach the player / attack line sits at u=0.5 of this
+const HORIZON_Y_RATIO = 0.34;
+const CONTACT_Y_RATIO = 0.80;
 const EASE_POW = 2.25;
-const MIN_SCALE = 0.10;
-const MAX_SCALE = 1.55;
+const MIN_SCALE = 0.14;
+const MAX_SCALE = 2.05;
+const PLAYER_SCALE = 1.35;
 
 /* ============================== CANVAS / SIZE ============================== */
 
@@ -193,7 +206,7 @@ resize();
 
 /* ============================== STATE ============================== */
 
-let gameState = 'title';
+let gameState = 'title'; // title | playing | paused | gameover
 let score = 0, distance = 0, combo = 0, maxCombo = 0, hp = PLAYER_MAX_HP;
 let bestScore = 0;
 try { bestScore = parseInt(localStorage.getItem('bladerush_best')||'0',10) || 0; } catch(e){ bestScore = 0; }
@@ -213,6 +226,7 @@ let floatingTexts = [];
 
 let pointerActive = false;
 let startX=0, startY=0, startT=0;
+let earlyDir = null;
 let trail = [];
 let lastTapPos = {x:0,y:0};
 
@@ -227,6 +241,8 @@ function rand(a,b){ return a + Math.random()*(b-a); }
 function pick(arr){ return arr[Math.floor(Math.random()*arr.length)]; }
 function clamp(v,a,b){ return Math.max(a, Math.min(b,v)); }
 function now(){ return performance.now(); }
+function dirIndex(d){ return DIR_ORDER.indexOf(d); }
+function circularDiff(i,j){ const n=8; const d=Math.abs(i-j)%n; return Math.min(d,n-d); }
 
 function getGestureDirection(dx,dy,dist){
   if(dist < SWIPE_MIN_DIST) return 'tap';
@@ -236,12 +252,87 @@ function getGestureDirection(dx,dy,dist){
   return DIR_ORDER[idx];
 }
 
-/* ---- perspective projection: u in [0,1], 0 = far horizon, 1 = contact point at player ---- */
 function posForU(u){
   const horizonY = H*HORIZON_Y_RATIO;
   const contactY = H*CONTACT_Y_RATIO;
   const e = Math.pow(clamp(u,0,1), EASE_POW);
   return { y: horizonY + (contactY-horizonY)*e, scale: MIN_SCALE + (MAX_SCALE-MIN_SCALE)*e };
+}
+
+/* ============================== ENEMY GENERATION ============================== */
+/* Two separate families that never mix within one enemy:
+   - "blade" enemies: a sequence of directional swipes (length grows with distance)
+   - "orb" enemies: a sequence of tap-the-circle targets (count grows with distance)   */
+
+function difficultyFactor(){ return clamp(1 - distance/6000, 0.72, 1); }
+
+function bladeLen(){
+  if(distance<300) return 1;
+  if(distance<700) return 2;
+  if(distance<1200) return 3;
+  if(distance<1900) return 4;
+  return 5;
+}
+function orbCount(){
+  if(distance<400) return 3;
+  if(distance<900) return 4;
+  if(distance<1500) return 5;
+  return 6;
+}
+function bladeFlavor(len){
+  if(len<=1) return pick([{name:'일반병',color:'#9aa2b5'},{name:'창병',color:'#4fd1c5'},{name:'암살자',color:'#b085f5'}]);
+  if(len===2) return pick([{name:'궁수',color:'#e0c34c'},{name:'악마',color:'#ef4459'}]);
+  return {name:'골렘',color:'#c08552'};
+}
+function orbFlavor(n){ return n<=4 ? {name:'마법사',color:'#63b3ff'} : {name:'박쥐',color:'#8f7fe0'}; }
+
+function baseRuntime(){
+  return { stepIndex:0, state:'queued', tapTarget:null, deathT:0, phase:'approach', approachTimer:0, xJitter: rand(-14,14), uAtResolve:0 };
+}
+
+function makeBladeEnemy(){
+  const len = bladeLen();
+  const flavor = bladeFlavor(len);
+  const pattern = [];
+  for(let i=0;i<len;i++){
+    let d;
+    do{ d = pick(DIR_ORDER); } while(d===pattern[pattern.length-1]);
+    pattern.push(d);
+  }
+  const tl = Math.max(0.85, (0.95*len + 0.55) * difficultyFactor());
+  return Object.assign(baseRuntime(), {
+    typeKey:'blade', name:flavor.name, color:flavor.color, isTap:false, pattern,
+    timeLimit:tl, timer:tl, dmg: 8+len*2, scoreVal: 90+len*45,
+    isBoss:false, approachDuration: rand(0.8,1.3)
+  });
+}
+
+function makeOrbEnemy(){
+  const n = orbCount();
+  const flavor = orbFlavor(n);
+  const pattern = new Array(n).fill('tap');
+  const tl = Math.max(1.3, (0.78*n + 0.6) * difficultyFactor());
+  return Object.assign(baseRuntime(), {
+    typeKey:'orb', name:flavor.name, color:flavor.color, isTap:true, pattern,
+    timeLimit:tl, timer:tl, dmg: 8+Math.floor(n/2)*2, scoreVal: 100+n*42,
+    isBoss:false, approachDuration: rand(0.8,1.3)
+  });
+}
+
+function makeBossRuntime(){
+  const len = 6 + Math.floor(Math.random()*3);
+  const dirs = [];
+  for(let i=0;i<len;i++){
+    let d;
+    do{ d = pick(DIR_ORDER); } while(d===dirs[dirs.length-1]);
+    dirs.push(d);
+  }
+  const tl = Math.max(4.4, len*0.9*difficultyFactor()+1.6);
+  return Object.assign(baseRuntime(), {
+    typeKey:'boss', name:'보스', color:'#ff3b57', isTap:false, pattern:dirs,
+    timeLimit:tl, timer:tl, dmg:24, scoreVal:900+len*60,
+    isBoss:true, approachDuration: rand(1.6,2.0)
+  });
 }
 
 /* ============================== GAME FLOW ============================== */
@@ -255,11 +346,15 @@ function resetGame(){
   updateHUD();
 }
 
+function setPauseBtnVisible(v){ document.getElementById('pauseBtn').style.display = v ? 'flex' : 'none'; }
+
 function startGame(){
   resetGame();
   gameState='playing';
   document.getElementById('titleScreen').classList.add('hidden');
   document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('pauseScreen').classList.add('hidden');
+  setPauseBtnVisible(true);
   lastFrameReal = now();
   try{
     if(canvas.requestFullscreen) canvas.requestFullscreen().catch(()=>{});
@@ -274,6 +369,7 @@ function gameOver(){
     bestScore = score;
     try{ localStorage.setItem('bladerush_best', String(bestScore)); }catch(e){}
   }
+  setPauseBtnVisible(false);
   document.getElementById('finalScore').textContent = Math.floor(score);
   document.getElementById('finalDist').textContent = Math.floor(distance)+' m';
   document.getElementById('finalCombo').textContent = maxCombo;
@@ -281,41 +377,32 @@ function gameOver(){
   document.getElementById('gameOverScreen').classList.remove('hidden');
 }
 
-/* ============================== SPAWNING ============================== */
-
-function unlockedTypes(){ return Object.keys(ENEMY_TYPES).filter(k => distance >= ENEMY_TYPES[k].unlock); }
-function difficultyFactor(){ return clamp(1 - distance/6000, 0.72, 1); }
-
-function makeEnemyRuntime(typeKey, isBoss){
-  const base = ENEMY_TYPES[typeKey];
-  const tl = Math.max(0.65, base.timeLimit * difficultyFactor());
-  return {
-    typeKey, name:base.name, color:base.color, isTap: !!base.isTap,
-    pattern: base.pattern.slice(),
-    timeLimit: tl, timer: tl,
-    dmg: base.dmg, scoreVal: base.score,
-    stepIndex:0, state:'queued', isBoss: !!isBoss,
-    tapTarget:null, deathT:0,
-    phase:'approach', approachDuration: (isBoss? rand(1.5,1.9) : rand(0.8,1.3)), approachTimer:0,
-    xJitter: rand(-14,14), uAtResolve:0
-  };
+function pauseGame(){
+  if(gameState!=='playing') return;
+  gameState='paused';
+  document.getElementById('pauseScore').textContent = Math.floor(score);
+  document.getElementById('pauseDist').textContent = Math.floor(distance)+' m';
+  document.getElementById('pauseScreen').classList.remove('hidden');
 }
-
-function makeBossRuntime(){
-  const len = 6 + Math.floor(Math.random()*3);
-  const dirs = [];
-  for(let i=0;i<len;i++){
-    let d;
-    do { d = Math.random()<0.15 ? 'tap' : pick(DIR_ORDER); } while(d===dirs[dirs.length-1]);
-    dirs.push(d);
+function resumeGame(){
+  gameState='playing';
+  document.getElementById('pauseScreen').classList.add('hidden');
+  lastFrameReal = now();
+}
+function quitToMenu(){
+  if(score > bestScore){
+    bestScore = score;
+    try{ localStorage.setItem('bladerush_best', String(bestScore)); }catch(e){}
   }
-  const tl = Math.max(4.2, len*0.85*difficultyFactor()+1.5);
-  const r = makeEnemyRuntime('soldier', true);
-  r.typeKey='boss'; r.name='보스'; r.color='#ff3b57'; r.isTap=false;
-  r.pattern=dirs; r.timeLimit=tl; r.timer=tl; r.dmg=24; r.scoreVal=900+len*60;
-  r.approachDuration = rand(1.6,2.0);
-  return r;
+  gameState='title';
+  setPauseBtnVisible(false);
+  document.getElementById('pauseScreen').classList.add('hidden');
+  document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('titleScreen').classList.remove('hidden');
+  resetGame();
 }
+
+/* ============================== SPAWNING ============================== */
 
 function spawnWave(){
   const bossMile = Math.floor(distance/500);
@@ -329,7 +416,6 @@ function spawnWave(){
     return;
   }
 
-  const pool = unlockedTypes();
   let size = 1;
   const r = Math.random();
   if(distance>250){ if(r<0.15) size=3; else if(r<0.45) size=2; else size=1; }
@@ -338,8 +424,7 @@ function spawnWave(){
   const enemies = [];
   let budget = 0;
   for(let i=0;i<size;i++){
-    const t = pick(pool);
-    const e = makeEnemyRuntime(t,false);
+    const e = Math.random()<0.32 ? makeOrbEnemy() : makeBladeEnemy();
     enemies.push(e);
     budget += e.timeLimit;
   }
@@ -364,8 +449,8 @@ function activateNext(){
 }
 
 function assignTapTarget(e){
-  const x = rand(W*0.28, W*0.72);
-  const y = rand(H*0.30, H*(HORIZON_Y_RATIO+0.30));
+  const x = rand(W*0.24, W*0.76);
+  const y = rand(H*0.34, H*(HORIZON_Y_RATIO+0.38));
   e.tapTarget = {x, y, born: now()};
 }
 
@@ -415,6 +500,7 @@ function spawnFloatText(x,y,text,color){ floatingTexts.push({x,y,text,color,life
 
 function onGestureInput(dir, releasePos){
   if(gameState!=='playing' || !activeEnemy || activeEnemy.phase!=='active') return;
+  if(dir==='__invalid__'){ failEnemy('wrong'); return; }
   const step = activeEnemy.pattern[activeEnemy.stepIndex];
   let ok = false;
   if(step==='tap'){
@@ -499,15 +585,26 @@ function failEnemy(kind){
 /* ---- pointer handlers ---- */
 function pointerDown(x,y){
   if(gameState!=='playing') return;
-  pointerActive=true; startX=x; startY=y; startT=now(); trail=[{x,y,t:startT}];
+  pointerActive=true; startX=x; startY=y; startT=now(); trail=[{x,y,t:startT}]; earlyDir=null;
 }
-function pointerMove(x,y){ if(!pointerActive) return; trail.push({x,y,t:now()}); if(trail.length>40) trail.shift(); }
+function pointerMove(x,y){
+  if(!pointerActive) return;
+  trail.push({x,y,t:now()}); if(trail.length>40) trail.shift();
+  if(earlyDir===null){
+    const dx=x-startX, dy=y-startY, d=Math.hypot(dx,dy);
+    if(d>=EARLY_SAMPLE_DIST) earlyDir = getGestureDirection(dx,dy,d);
+  }
+}
 function pointerUp(x,y){
   if(!pointerActive) return;
   pointerActive=false;
   const dx=x-startX, dy=y-startY, dist=Math.hypot(dx,dy);
   const dir = getGestureDirection(dx,dy,dist);
   lastTapPos = {x,y};
+  if(dir!=='tap' && earlyDir && earlyDir!=='tap'){
+    const diff = circularDiff(dirIndex(earlyDir), dirIndex(dir));
+    if(diff>=REVERSAL_REJECT_STEPS){ onGestureInput('__invalid__', lastTapPos); return; }
+  }
   onGestureInput(dir, lastTapPos);
 }
 canvas.addEventListener('pointerdown', e=>{ e.preventDefault(); pointerDown(e.clientX,e.clientY); }, {passive:false});
@@ -517,6 +614,10 @@ window.addEventListener('pointercancel', ()=>{ pointerActive=false; trail=[]; })
 
 document.getElementById('startBtn').addEventListener('click', startGame);
 document.getElementById('retryBtn').addEventListener('click', startGame);
+document.getElementById('goMenuBtn').addEventListener('click', quitToMenu);
+document.getElementById('pauseBtn').addEventListener('click', pauseGame);
+document.getElementById('resumeBtn').addEventListener('click', resumeGame);
+document.getElementById('menuBtn').addEventListener('click', quitToMenu);
 
 /* ============================== HUD ============================== */
 
@@ -526,7 +627,9 @@ function updateHUD(){
   const comboChip = document.getElementById('comboChip');
   document.getElementById('comboVal').textContent = combo;
   if(combo>=2) comboChip.classList.add('show'); else comboChip.classList.remove('show');
-  document.getElementById('hpBar').style.width = clamp(hp/PLAYER_MAX_HP*100,0,100)+'%';
+  const hpPct = clamp(hp/PLAYER_MAX_HP*100,0,100);
+  document.getElementById('hpBar').style.width = hpPct+'%';
+  document.getElementById('hpNum').textContent = Math.ceil(hp);
 }
 
 /* ============================== UPDATE ============================== */
@@ -589,7 +692,6 @@ function drawBackground(){
   sky.addColorStop(0,'#0a0d1e'); sky.addColorStop(1,'#171b30');
   ctx.fillStyle=sky; ctx.fillRect(0,0,W,horizonY);
 
-  // distant silhouettes flanking the road
   ctx.fillStyle='rgba(28,32,54,0.9)';
   const off = (distance*0.4)%140;
   for(let x=-off; x<W+140; x+=140){
@@ -624,7 +726,6 @@ function drawRoad(horizonY){
   ctx.beginPath(); ctx.moveTo(cx-topHalf,horizonY); ctx.lineTo(cx-botHalf,H); ctx.stroke();
   ctx.beginPath(); ctx.moveTo(cx+topHalf,horizonY); ctx.lineTo(cx+botHalf,H); ctx.stroke();
 
-  // scrolling perspective ties
   ctx.clip();
   const tieCount = 14;
   const spacing = 1/tieCount;
@@ -646,7 +747,7 @@ function drawRoad(horizonY){
 
 function drawPlayer(){
   const cx = W/2;
-  const baseY = H*0.965;
+  const baseY = H*0.975;
   const bob = Math.sin(playerAnim.bob)*3.5;
   let sway = Math.sin(playerAnim.bob*0.5)*3;
   let tilt = 0;
@@ -655,30 +756,26 @@ function drawPlayer(){
   ctx.save();
   ctx.translate(cx+sway, baseY+bob);
   ctx.rotate(tilt);
+  ctx.scale(PLAYER_SCALE, PLAYER_SCALE);
 
-  // ground shadow
   ctx.save(); ctx.translate(0,10); ctx.scale(1,0.22);
   ctx.beginPath(); ctx.arc(0,0,58,0,Math.PI*2);
   ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fill();
   ctx.restore();
 
-  // cloak
   ctx.fillStyle='#1c2036';
   ctx.beginPath();
   ctx.moveTo(-46,-70); ctx.quadraticCurveTo(-70,10,-30,30); ctx.lineTo(30,30);
   ctx.quadraticCurveTo(70,10,46,-70); ctx.closePath(); ctx.fill();
 
-  // shoulders / back
   ctx.fillStyle='#2b3350';
   ctx.beginPath(); ctx.roundRect(-40,-98,80,72,18); ctx.fill();
 
-  // head (back of head)
   ctx.fillStyle='#181b2a';
   ctx.beginPath(); ctx.arc(0,-118,26,0,Math.PI*2); ctx.fill();
   ctx.fillStyle='#12141f';
   ctx.beginPath(); ctx.roundRect(-16,-142,32,20,10); ctx.fill();
 
-  // sword arm (right side, held ready) + slash swing
   const slashActive = playerAnim.slashT>=0;
   const swAngle = slashActive ? (-1.15 + playerAnim.slashT*1.9) : -0.95;
   ctx.save();
@@ -703,12 +800,12 @@ function drawEnemyAt(e, x, y, scale, alpha){
   ctx.translate(x,y);
   ctx.scale(scale,scale);
 
-  ctx.save(); ctx.translate(0,40); ctx.scale(1,0.25);
-  ctx.beginPath(); ctx.arc(0,0, e.isBoss?40:24,0,Math.PI*2);
+  ctx.save(); ctx.translate(0,44); ctx.scale(1,0.25);
+  ctx.beginPath(); ctx.arc(0,0, e.isBoss?52:32,0,Math.PI*2);
   ctx.fillStyle='rgba(0,0,0,0.42)'; ctx.fill();
   ctx.restore();
 
-  const r = e.isBoss? 32:22;
+  const r = e.isBoss? 44:30;
   const grad = ctx.createRadialGradient(0,0,2,0,0,r*1.5);
   grad.addColorStop(0, e.color); grad.addColorStop(1,'rgba(0,0,0,0)');
   ctx.fillStyle=grad; ctx.beginPath(); ctx.arc(0,2,r*1.5,0,Math.PI*2); ctx.fill();
@@ -718,43 +815,66 @@ function drawEnemyAt(e, x, y, scale, alpha){
   ctx.beginPath(); ctx.arc(0,-r*0.55, r*0.52,0,Math.PI*2); ctx.fill();
 
   ctx.fillStyle='rgba(255,255,255,0.92)';
-  ctx.font = `700 ${e.isBoss?16:12}px Rajdhani, sans-serif`;
+  ctx.font = `700 ${e.isBoss?18:14}px Rajdhani, sans-serif`;
   ctx.textAlign='center';
-  ctx.fillText(e.name, 0, r+20);
+  ctx.fillText(e.name, 0, r+22);
   ctx.restore();
 }
 
-function drawPatternRow(cx, cy, e, scale){
+/* ---- fixed, large on-screen pattern readout ---- */
+
+function drawPatternUI(e){
   const n = e.pattern.length;
-  const box = (e.isBoss? 26:22) * Math.max(scale,0.55);
-  const gap = 6*Math.max(scale,0.55);
+  const zoneW = W*0.90;
+  const box = clamp((zoneW-(n-1)*10)/n, 34, 66);
+  const gap = 10;
   const totalW = n*box + (n-1)*gap;
+  const cx = W/2;
+  const rowY = Math.max(H*0.235, 118);
+
   let x0 = cx - totalW/2;
   for(let i=0;i<n;i++){
     const bx = x0 + i*(box+gap);
     const done = i<e.stepIndex, cur = i===e.stepIndex;
     ctx.save();
-    ctx.translate(bx+box/2, cy);
-    ctx.beginPath(); ctx.roundRect(-box/2,-box/2, box, box, 5);
-    if(cur){ ctx.fillStyle='rgba(240,196,25,0.20)'; ctx.fill(); ctx.strokeStyle='#f0c419'; ctx.lineWidth=2; ctx.stroke(); }
-    else if(done){ ctx.fillStyle='rgba(57,217,138,0.18)'; ctx.fill(); ctx.strokeStyle='#39d98a'; ctx.lineWidth=1.5; ctx.stroke(); }
-    else { ctx.fillStyle='rgba(255,255,255,0.07)'; ctx.fill(); ctx.strokeStyle='rgba(255,255,255,0.28)'; ctx.lineWidth=1; ctx.stroke(); }
-    ctx.fillStyle = done? '#39d98a' : (cur? '#f0c419' : 'rgba(255,255,255,0.75)');
-    ctx.font=`700 ${box*0.6}px Rajdhani, sans-serif`;
+    ctx.translate(bx+box/2, rowY);
+    ctx.beginPath(); ctx.roundRect(-box/2,-box/2, box, box, 9);
+    if(cur){
+      ctx.shadowColor='rgba(240,196,25,0.85)'; ctx.shadowBlur=18;
+      ctx.fillStyle='rgba(240,196,25,0.22)'; ctx.fill();
+      ctx.shadowBlur=0;
+      ctx.strokeStyle='#f0c419'; ctx.lineWidth=3; ctx.stroke();
+    } else if(done){
+      ctx.fillStyle='rgba(57,217,138,0.20)'; ctx.fill();
+      ctx.strokeStyle='#39d98a'; ctx.lineWidth=2; ctx.stroke();
+    } else {
+      ctx.fillStyle='rgba(255,255,255,0.08)'; ctx.fill();
+      ctx.strokeStyle='rgba(255,255,255,0.30)'; ctx.lineWidth=1.5; ctx.stroke();
+    }
+    ctx.fillStyle = done? '#39d98a' : (cur? '#fff6cf' : 'rgba(255,255,255,0.8)');
+    ctx.font=`700 ${box*0.56}px Rajdhani, sans-serif`;
     ctx.textAlign='center'; ctx.textBaseline='middle';
-    ctx.fillText(DIR_ICON[e.pattern[i]], 0, 1);
+    ctx.fillText(DIR_ICON[e.pattern[i]], 0, 2);
     ctx.restore();
   }
-}
 
-function drawTimerBar(cx, cy, e, scale){
-  const w = (e.isBoss?150:100) * Math.max(scale,0.55), h=5;
+  const barY = rowY + box/2 + 16;
+  const barW = totalW, barH = 9;
   const ratio = clamp(e.timer/e.timeLimit,0,1);
-  ctx.save(); ctx.translate(cx-w/2, cy);
-  ctx.fillStyle='rgba(255,255,255,0.12)'; ctx.beginPath(); ctx.roundRect(0,0,w,h,3); ctx.fill();
+  ctx.save(); ctx.translate(cx-barW/2, barY);
+  ctx.fillStyle='rgba(255,255,255,0.14)'; ctx.beginPath(); ctx.roundRect(0,0,barW,barH,4); ctx.fill();
   const col = ratio>0.5? '#39d98a' : ratio>0.22? '#f0c419' : '#ef2b4d';
-  ctx.fillStyle=col; ctx.beginPath(); ctx.roundRect(0,0,w*ratio,h,3); ctx.fill();
+  ctx.fillStyle=col; ctx.beginPath(); ctx.roundRect(0,0,barW*ratio,barH,4); ctx.fill();
   ctx.restore();
+
+  if(e.isBoss){
+    ctx.save();
+    ctx.fillStyle='#ff3b57';
+    ctx.font="700 15px 'Rajdhani', sans-serif";
+    ctx.textAlign='center';
+    ctx.fillText('보스', cx, rowY - box/2 - 12);
+    ctx.restore();
+  }
 }
 
 function drawTapTarget(e){
@@ -762,11 +882,11 @@ function drawTapTarget(e){
   const age = (now()-t.born)/1000;
   const pulse = 1 + Math.sin(age*8)*0.08;
   ctx.save(); ctx.translate(t.x,t.y);
-  ctx.strokeStyle='#63b3ff'; ctx.lineWidth=3;
+  ctx.strokeStyle='#63b3ff'; ctx.lineWidth=4;
   ctx.beginPath(); ctx.arc(0,0, TAP_TARGET_RADIUS*pulse, 0, Math.PI*2); ctx.stroke();
-  ctx.fillStyle='rgba(99,179,255,0.18)'; ctx.beginPath(); ctx.arc(0,0, TAP_TARGET_RADIUS*0.8, 0, Math.PI*2); ctx.fill();
-  ctx.fillStyle='#fff'; ctx.font='700 20px Rajdhani, sans-serif';
-  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('○', 0, 1);
+  ctx.fillStyle='rgba(99,179,255,0.20)'; ctx.beginPath(); ctx.arc(0,0, TAP_TARGET_RADIUS*0.82, 0, Math.PI*2); ctx.fill();
+  ctx.fillStyle='#fff'; ctx.font='700 26px Rajdhani, sans-serif';
+  ctx.textAlign='center'; ctx.textBaseline='middle'; ctx.fillText('○', 0, 2);
   ctx.restore();
 }
 
@@ -776,20 +896,16 @@ function drawActiveEnemy(){
   drawEnemyAt(e, pos.x, pos.y, pos.scale, 1);
 
   if(e.phase==='active'){
-    drawPatternRow(pos.x, pos.y - (e.isBoss?74:56)*Math.max(pos.scale,0.55), e, pos.scale);
-    drawTimerBar(pos.x, pos.y - (e.isBoss?92:74)*Math.max(pos.scale,0.55), e, pos.scale);
+    drawPatternUI(e);
     if(e.pattern[e.stepIndex]==='tap' && e.tapTarget) drawTapTarget(e);
-  } else {
-    // approaching: small "!" cue right as it nears the attack line
-    if(pos.u>0.38){
-      ctx.save();
-      ctx.globalAlpha = clamp((pos.u-0.38)/0.12,0,1);
-      ctx.fillStyle='#fff';
-      ctx.font=`700 ${18*Math.max(pos.scale,0.5)}px Rajdhani, sans-serif`;
-      ctx.textAlign='center';
-      ctx.fillText('!', pos.x, pos.y - 40*pos.scale);
-      ctx.restore();
-    }
+  } else if(pos.u>0.38){
+    ctx.save();
+    ctx.globalAlpha = clamp((pos.u-0.38)/0.12,0,1);
+    ctx.fillStyle='#fff';
+    ctx.font=`700 ${20*Math.max(pos.scale,0.5)}px Rajdhani, sans-serif`;
+    ctx.textAlign='center';
+    ctx.fillText('!', pos.x, pos.y - 46*pos.scale);
+    ctx.restore();
   }
 }
 
@@ -839,7 +955,7 @@ function drawFloatingTexts(){
   floatingTexts.forEach(f=>{
     ctx.globalAlpha = clamp(f.life,0,1);
     ctx.fillStyle = f.color;
-    ctx.font='800 24px Rajdhani, sans-serif';
+    ctx.font='800 26px Rajdhani, sans-serif';
     ctx.textAlign='center';
     ctx.strokeStyle='rgba(0,0,0,0.6)'; ctx.lineWidth=4;
     ctx.strokeText(f.text, f.x, f.y);
@@ -872,10 +988,10 @@ function loop(t){
   dtReal = Math.min(dtReal, 0.05);
   lastFrameReal = t;
 
-  if(!orientationBlocked){
-    update(dtReal);
-    render();
-  }
+  if(orientationBlocked || gameState==='paused'){ requestAnimationFrame(loop); return; }
+
+  update(dtReal);
+  render();
   requestAnimationFrame(loop);
 }
 
