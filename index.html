@@ -74,7 +74,7 @@
   .go-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:28px; color:var(--crimson-glow); letter-spacing:2px; margin:0 0 14px 0; }
   .section-label{ text-align:left; font-size:11.5px; color:var(--text-dim); letter-spacing:1.5px; margin-top:16px; }
   .test-grid{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
-  .swatch-row{ display:flex; gap:10px; margin-top:8px; }
+  .swatch-row{ display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }
   .swatch{ width:40px; height:40px; border-radius:50%; border:2px solid rgba(255,255,255,0.15); cursor:pointer; pointer-events:auto; box-shadow:0 0 0 0 transparent; transition:transform .12s ease, box-shadow .12s ease; }
   .swatch.selected{ border-color:#fff; transform:scale(1.12); box-shadow:0 0 14px currentColor; }
   .style-grid{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
@@ -158,7 +158,7 @@
     </svg>
     <div class="rules">
       <div>공격범위에 들어온 적에게 방향 스와이프 패턴이 뜨거나, 숫자 원이 화면에 흩어져 나타나면 <b>순서대로</b> 탭하세요. <b>V·^·Z·⚡</b> 모양은 한 번에 이어 그릴 수 있어요.</div>
-      <div>보스는 <b>3번 명중</b>시켜야 쓰러지며, <b>PERFECT</b> 판정으로 명중시키면 슬로모션 <b>피니셔</b>가 발동합니다. 처치하면 <b>체크포인트</b>가 저장됩니다.</div>
+      <div>보스는 <b>3번 명중</b>시켜야 쓰러지며, <b>PERFECT</b> 판정으로 명중시키거나 <b>PERFECT 콤보 10의 배수</b>를 달성하면 슬로모션 <b>피니셔</b>가 발동합니다. 보스를 처치하면 <b>체크포인트</b>가 저장됩니다.</div>
     </div>
     <button class="btn secondary" id="continueBtn" style="display:none;"></button>
     <button class="btn" id="startBtn">달리기 시작</button>
@@ -302,28 +302,10 @@ Object.keys(SPRITE_META).forEach(key=>{
 function pickBossSpriteKey(){ return pick(BOSS_SPRITE_KEYS); }
 const RUN_FRAME_DUR = 0.12; // seconds per run-cycle frame
 
-/* ============================== PLAYER FX (first-person) ============================== */
-// First-person view: there's no player character body on screen. Only the
-// skill-effect sprite (fx_<name>_N.png) flashes into view — like your own
-// blade swinging through frame — mapped 1:1 to the hit-judgement system,
-// see succeedEnemy():
-//   GOOD success                                         -> 'good'     (기본공격 이펙트)
-//   PERFECT success                                       -> 'perfect'  (특수공격 이펙트)
-//   PERFECT hit on a boss (triggers the finisher slow-mo) -> 'finisher' (필살기 이펙트)
-const PLAYER_ANIM_KEYS = ['good','perfect','finisher'];
-const PLAYER_ANIM_FRAMES = 6;
-const PLAYER_FX_SPRITES = {};
-PLAYER_ANIM_KEYS.forEach(name=>{
-  const fxRun = [];
-  for(let i=0;i<PLAYER_ANIM_FRAMES;i++){
-    const fx = new Image(); fx.src = `assets/player/fx_${name}_${i}.png`; fxRun.push(fx);
-  }
-  PLAYER_FX_SPRITES[name] = { run: fxRun };
-});
-// on-screen height (px) the effect sprite is scaled to (width follows its own aspect ratio)
-const PLAYER_SPRITE_HEIGHT = 168;
-// how long each animation plays for (real seconds) before returning to idle;
-// finisher is deliberately long so it reads clearly through the boss-hit slow-mo
+/* ============================== PLAYER JUDGEMENT ANIM STATE ============================== */
+// First-person view: no player character body or attack-effect sprite is
+// rendered at all anymore. playerAnim just tracks which judgement tier the
+// last hit was (used only for timing bookkeeping now, not visuals).
 const PLAYER_ANIM_DUR = { good:0.26, perfect:0.30, finisher:0.85 };
 
 
@@ -358,6 +340,30 @@ const SHAPE_COMBOS = {
   '⚡': ['downleft','downright','downleft']    // 지그재그 (번개)
 };
 const SHAPE_COLORS = { 'V':'#63b3ff', '^':'#ff9f4a', 'Z':'#c9a0ff', '⚡':'#f0c419' };
+// Drawn as real vector strokes (not font glyphs) so V/^/Z/⚡ share the same
+// visual weight as everything else instead of looking like mismatched
+// letters/emoji — size is the icon's roughly-diameter in px, centered at
+// the current transform origin.
+function drawShapeVectorIcon(shapeName, size, color){
+  ctx.save();
+  ctx.strokeStyle = color;
+  ctx.lineWidth = size*0.16;
+  ctx.lineCap = 'round';
+  ctx.lineJoin = 'round';
+  ctx.beginPath();
+  if(shapeName==='V'){
+    ctx.moveTo(-0.40*size,-0.30*size); ctx.lineTo(0,0.38*size); ctx.lineTo(0.40*size,-0.30*size);
+  } else if(shapeName==='^'){
+    ctx.moveTo(-0.40*size,0.30*size); ctx.lineTo(0,-0.38*size); ctx.lineTo(0.40*size,0.30*size);
+  } else if(shapeName==='Z'){
+    ctx.moveTo(-0.36*size,-0.32*size); ctx.lineTo(0.36*size,-0.32*size);
+    ctx.lineTo(-0.36*size,0.32*size); ctx.lineTo(0.36*size,0.32*size);
+  } else if(shapeName==='⚡'){
+    ctx.moveTo(0.20*size,-0.42*size); ctx.lineTo(-0.16*size,-0.02*size); ctx.lineTo(0.14*size,-0.02*size); ctx.lineTo(-0.20*size,0.42*size);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
 
 const PLAYER_MAX_HP = 100;
 const TAP_TARGET_RADIUS = 46;
@@ -373,7 +379,7 @@ const ORB_NUM_STYLES = [
   {stroke:'#ff9f4a', fill:'rgba(255,159,74,0.16)'}
 ];
 const SWIPE_MIN_DIST = 22;
-const STROKE_SEGMENT_CONFIRM_DIST = 34; // see pointerMove's strokeMode handling
+const STROKE_SEGMENT_CONFIRM_DIST = 42; // see pointerMove's strokeMode handling
 const EARLY_SAMPLE_DIST = 14;
 const REVERSAL_REJECT_STEPS = 3;
 
@@ -525,11 +531,13 @@ try{ soundEnabled = localStorage.getItem('bladerush_sound') !== 'off'; }catch(e)
 
 /* ---- blade-trail visual settings: color palette + effect style ---- */
 const TRAIL_COLORS = {
-  crimson: { label:'크림슨',   rgb:[255,92,122] },
-  cyan:    { label:'시안',     rgb:[80,200,255] },
-  gold:    { label:'골드',     rgb:[240,196,25] },
-  violet:  { label:'바이올렛', rgb:[170,110,255] },
-  emerald: { label:'에메랄드', rgb:[70,220,140] }
+  crimson: { label:'블레이즈',   rgb:[255,70,70],  rgb2:[255,190,50]  }, // red -> gold
+  cyan:    { label:'프로스트',   rgb:[110,225,255],rgb2:[70,110,255]  }, // cyan -> deep blue
+  gold:    { label:'솔라',       rgb:[255,215,80], rgb2:[255,110,30]  }, // gold -> orange
+  violet:  { label:'갤럭시',     rgb:[180,100,255],rgb2:[255,90,200]  }, // violet -> magenta
+  emerald: { label:'베놈',       rgb:[70,230,160], rgb2:[200,255,60]  }, // emerald -> lime
+  sunset:  { label:'선셋',       rgb:[255,140,60], rgb2:[255,60,130]  }, // orange -> pink
+  aurora:  { label:'오로라',     rgb:[80,220,255], rgb2:[180,100,255] }  // cyan -> violet
 };
 const TRAIL_STYLES = {
   classic:  { label:'클래식' },       // simple width-tapered stroke (current default)
@@ -877,7 +885,7 @@ function orbCount(){ return pick(currentStage().orbCounts); }
 function pickSpriteKey(){ return pick(SPRITE_KEYS); }
 
 function baseRuntime(){
-  return { stepIndex:0, state:'queued', tapTargets:null, deathT:0, phase:'approach', approachTimer:0, xJitter: rand(-14,14), uAtResolve:0, animOffset: rand(0,2000) };
+  return { stepIndex:0, state:'queued', tapTargets:null, deathT:0, phase:'approach', approachTimer:0, xJitter: 0, uAtResolve:0, animOffset: rand(0,2000) };
 }
 
 function pickBladeStep(prev){
@@ -1232,9 +1240,10 @@ function buildTrailSettingsUI(){
   colorRow.innerHTML = '';
   Object.keys(TRAIL_COLORS).forEach(key=>{
     const [r,g,b] = TRAIL_COLORS[key].rgb;
+    const [r2,g2,b2] = TRAIL_COLORS[key].rgb2;
     const el = document.createElement('div');
     el.className = 'swatch' + (trailSettings.color===key ? ' selected' : '');
-    el.style.background = `rgb(${r},${g},${b})`;
+    el.style.background = `linear-gradient(135deg, rgb(${r},${g},${b}), rgb(${r2},${g2},${b2}))`;
     el.style.color = `rgb(${r},${g},${b})`;
     el.title = TRAIL_COLORS[key].label;
     el.addEventListener('click', ()=>{
@@ -1314,6 +1323,11 @@ function spawnTestEnemy(){
     e = makeBladeEnemy(shapePattern.length);
     e.pattern = shapePattern.slice();
     e.shapeName = cfg.shape;
+    // makeBladeEnemy() may have internally rolled a DIFFERENT same-length
+    // shape (e.g. asked for Z, got ⚡ picked for the label) before we forced
+    // the pattern above — fix the name label to match what's actually shown
+    const baseName = e.name.replace(/\s*\([^)]*\)$/, '');
+    e.name = `${baseName} (${cfg.shape})`;
     // recompute the time limit fresh so the shape bonus is included exactly
     // once, regardless of whether makeBladeEnemy() happened to internally
     // roll a (possibly different) shape at this same length
@@ -1360,7 +1374,7 @@ function updateTestHUD(){
     document.getElementById('testStatsLine').textContent =
       `시도 ${s.attempts}  ·  피니셔 발동 ${s.finisherHits||0}  ·  발동률 ${rate}%  ·  PERFECT ${s.perfect}`;
     document.getElementById('testDebugLine').textContent =
-      `보스 패턴을 PERFECT 판정으로 성공시키면 슬로모션 피니셔가 발동해요. GOOD/LATE/MISS/WRONG은 발동하지 않습니다.`;
+      `보스 패턴을 PERFECT로 성공시키거나, PERFECT 콤보가 10의 배수(10/20/30…)가 되면 슬로모션 피니셔가 발동해요.`;
     return;
   }
   const s = testState.stats;
@@ -1575,14 +1589,70 @@ function resolveWaveIfDone(){
 
 // Finisher is boss-only now: landing a PERFECT hit on a boss (blade or orb
 // pattern, doesn't matter which) triggers slow-motion + a flashy payoff.
-function triggerBossFinisher(){
+let finisherFxStart = 0, finisherFxUntil = 0;
+const FINISHER_FX_DURATION = 900; // ms — matches the slow-mo window
+
+function triggerFinisher(){
   slowmoUntilReal = now() + 900;
   flashScreen('gold');
   showBanner('PERFECT!');
   triggerShake(24);
+  finisherFxStart = now();
+  finisherFxUntil = finisherFxStart + FINISHER_FX_DURATION;
   if(testState.active){
     testState.stats.finisherHits = (testState.stats.finisherHits||0)+1;
   }
+}
+
+// Big full-screen Z-shaped "slash mark" that draws itself on across the
+// screen then fades — the finisher's signature visual. Uses the player's
+// own chosen trail color/theme so it feels like the same blade did it.
+function drawFinisherFx(){
+  if(now() > finisherFxUntil) return;
+  const t = (now()-finisherFxStart)/FINISHER_FX_DURATION; // 0..1
+  const theme = TRAIL_COLORS[trailSettings.color];
+  const c1 = theme.rgb, c2 = theme.rgb2 || theme.rgb;
+  const drawT = clamp(t/0.30, 0, 1);           // the Z slashes in over the first 30%
+  const fadeA = t<0.55 ? 1 : clamp(1-(t-0.55)/0.45, 0, 1); // holds, then fades over the rest
+
+  const padX = W*0.10, padY = H*0.05;
+  const topY = H*0.30, botY = H*0.68;
+  const pts = [
+    {x:padX,   y:topY},
+    {x:W-padX, y:topY},
+    {x:padX,   y:botY},
+    {x:W-padX, y:botY}
+  ];
+  const segT = drawT*3;
+  ctx.save();
+  ctx.globalAlpha = fadeA;
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  for(let i=0;i<3;i++){
+    const segProgress = clamp(segT-i, 0, 1);
+    if(segProgress<=0) continue;
+    const p0 = pts[i], p1 = pts[i+1];
+    const ex = p0.x + (p1.x-p0.x)*segProgress;
+    const ey = p0.y + (p1.y-p0.y)*segProgress;
+    const [r,g,b] = i===0 ? c1 : i===1 ? lerpRGB(c1,c2,0.5) : c2;
+    ctx.shadowColor = `rgba(${r},${g},${b},0.95)`; ctx.shadowBlur = 46;
+    ctx.strokeStyle = `rgba(${r},${g},${b},0.75)`;
+    ctx.lineWidth = 26;
+    ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(ex,ey); ctx.stroke();
+    ctx.shadowBlur = 0;
+    ctx.strokeStyle = 'rgba(255,255,255,0.95)';
+    ctx.lineWidth = 7;
+    ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(ex,ey); ctx.stroke();
+  }
+  // brief radial flash behind the Z right as it finishes drawing
+  if(t<0.4){
+    const flashA = clamp(1-t/0.4,0,1)*0.35;
+    const g2 = ctx.createRadialGradient(W/2,H*0.49,0,W/2,H*0.49,W*0.6);
+    g2.addColorStop(0, `rgba(${c1[0]},${c1[1]},${c1[2]},${flashA})`);
+    g2.addColorStop(1, `rgba(${c1[0]},${c1[1]},${c1[2]},0)`);
+    ctx.fillStyle = g2;
+    ctx.fillRect(0,0,W,H);
+  }
+  ctx.restore();
 }
 
 function handleBossPhaseResolved(wasSuccess, resolvedEnemy){
@@ -1732,9 +1802,9 @@ function succeedEnemy(){
 
   if(judge.label==='PERFECT') perfectStreak++; else perfectStreak=0;
   const tier = fxTier();
-  // finisher animation/slow-mo only fires on a PERFECT hit against a boss;
-  // any other successful hit plays 'good' (LATE included) or 'perfect'
-  const isFinisherHit = e.isBoss && judge.label==='PERFECT';
+  // finisher fires on: a PERFECT hit against any boss phase, OR a PERFECT
+  // that lands the combo streak on a multiple of 10 (10, 20, 30...)
+  const isFinisherHit = judge.label==='PERFECT' && (e.isBoss || (perfectStreak>0 && perfectStreak%10===0));
 
   const pos = currentEnemyScreenPos(e);
   spawnParticles(pos.x,pos.y, judge.color, (e.isBoss?36:18) + tier*8);
@@ -1762,7 +1832,7 @@ function succeedEnemy(){
   hapticPulse(judge.label==='PERFECT'? 18 : judge.label==='GOOD'? 10 : 6);
 
   if(isFinisherHit){
-    triggerBossFinisher();
+    triggerFinisher();
     spawnParticles(pos.x,pos.y,'#f0c419', 30);
     spawnParticles(pos.x,pos.y,'#fff6cf', 18);
   }
@@ -1859,10 +1929,8 @@ function failEnemy(){
     updateHUD();
   }
 
-  // Stand beside the player (not overlapping/poking through) so the
-  // attack animation is fully visible — random side each time.
-  const failSide = Math.random()<0.5 ? -1 : 1;
-  e.xJitter = failSide * rand(85, 115);
+  // Straight up the middle: attacks dead-center, no side offset, then disappears.
+  e.xJitter = 0;
   e.state='dead-fail'; e.phase='dead'; e.deathT=0; e.uAtResolve=Math.min(pos.u, FAIL_ATTACK_U);
   dyingEnemies.push(e);
   activeEnemy = null;
@@ -2266,27 +2334,11 @@ function drawRoad(horizonY, theme){
 // First-person view: there's no player character body on screen anymore —
 // only the skill-effect sprite flashes into view (like your own blade
 // swinging through frame) while an attack animation is playing. Idle = nothing.
-function drawPlayer(){
-  const anim = playerAnim.anim;
-  if(!anim) return;
-  const cx = W/2;
-  const baseY = H*0.975;
-  const bob = Math.sin(playerAnim.bob)*3.5;
-  const sway = Math.sin(playerAnim.bob*0.5)*3;
-
-  const frameIdx = clamp(Math.floor(playerAnim.animT*PLAYER_ANIM_FRAMES), 0, PLAYER_ANIM_FRAMES-1);
-  const fxImg = PLAYER_FX_SPRITES[anim].run[frameIdx];
-  if(!fxImg || !fxImg.naturalWidth) return;
-
-  ctx.save();
-  ctx.translate(cx+sway, baseY+bob);
-  ctx.scale(PLAYER_SCALE, PLAYER_SCALE);
-  ctx.globalAlpha = 0.95;
-  const fxH = PLAYER_SPRITE_HEIGHT;
-  const fxW = fxH * (fxImg.naturalWidth/fxImg.naturalHeight);
-  ctx.drawImage(fxImg, -fxW/2, -fxH, fxW, fxH);
-  ctx.restore();
-}
+// First-person view: no player character body, and (per feedback) no
+// asset-based attack-effect sprite either. Hit feedback comes entirely from
+// the screen flash / hit-stop / zoom-punch / particles already triggered in
+// succeedEnemy(), so this is intentionally a no-op.
+function drawPlayer(){}
 
 // Picks the current animation frame for an enemy: its run cycle loops
 // continuously, except right when it lands a hit on the player (dead-fail),
@@ -2360,7 +2412,7 @@ function isFlickerHidden(e){
   // back into view for a last look right before time runs out — testing
   // whether you actually memorized it, not a repeating strobe.
   const len = e.pattern.length;
-  const initialShow = 0.55 + 0.35*len; // e.g. ~1.6s for a 3-step pattern, ~2.3s for 5
+  const initialShow = 0.30 + 0.16*len; // e.g. ~0.78s for a 3-step pattern, ~1.1s for 5 — brief peek, not a long read
   const reminderShow = 0.7;            // reappears for the final 0.7s before timeout
   const t = (now() - (e.activeAt||now())) / 1000;
   if(t < initialShow) return false;
@@ -2423,13 +2475,9 @@ function drawPatternUI(e){
     ctx.lineWidth = 4;
     ctx.beginPath(); ctx.arc(0,0,iconSize*0.46,0,Math.PI*2); ctx.stroke();
 
-    ctx.fillStyle = '#fff';
-    ctx.font = `900 ${iconSize*0.5}px Rajdhani, sans-serif`;
-    ctx.textAlign = 'center';
-    ctx.textBaseline = 'middle';
     ctx.shadowColor = ringColor;
     ctx.shadowBlur = 24;
-    ctx.fillText(e.shapeName, 0, iconSize*0.03);
+    drawShapeVectorIcon(e.shapeName, iconSize*0.6, '#fff');
     ctx.shadowBlur = 0;
     ctx.restore();
 
@@ -2595,11 +2643,70 @@ function drawQueuedPreview(){
   });
 }
 
+// Test-mode-only debug overlay: shows exactly where the strokeMode segment
+// detector thinks the "checkpoint" is right now, the confirm-distance ring
+// (how far you need to travel before a new segment's direction locks in),
+// and the 8 bucket wedge boundaries radiating out from it — so you can see
+// in real time why a segment did or didn't register as the direction you meant.
+function drawStrokeRecognitionDebug(){
+  if(!strokeMode || !pointerActive) return;
+  ctx.save();
+  ctx.translate(strokeCheckX, strokeCheckY);
+  ctx.globalAlpha = 0.8;
+  // confirm-distance ring — a new segment's direction locks in once you
+  // cross this radius from the checkpoint
+  ctx.strokeStyle = 'rgba(255,246,207,0.55)';
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([4,4]);
+  ctx.beginPath(); ctx.arc(0,0,STROKE_SEGMENT_CONFIRM_DIST,0,Math.PI*2); ctx.stroke();
+  ctx.setLineDash([]);
+  // min-distance ring — smaller, the floor for detecting ANY movement at all
+  ctx.strokeStyle = 'rgba(255,246,207,0.25)';
+  ctx.beginPath(); ctx.arc(0,0,SWIPE_MIN_DIST,0,Math.PI*2); ctx.stroke();
+  // 8 wedge boundary lines (between adjacent direction buckets, offset 22.5°
+  // from each bucket's own center angle)
+  ctx.strokeStyle = 'rgba(255,246,207,0.22)';
+  ctx.lineWidth = 1;
+  for(let i=0;i<8;i++){
+    const a = (i*45 - 22.5) * Math.PI/180;
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.lineTo(Math.cos(a)*STROKE_SEGMENT_CONFIRM_DIST*1.4, Math.sin(a)*STROKE_SEGMENT_CONFIRM_DIST*1.4);
+    ctx.stroke();
+  }
+  // checkpoint marker itself
+  ctx.fillStyle = '#fff6cf';
+  ctx.beginPath(); ctx.arc(0,0,4,0,Math.PI*2); ctx.fill();
+  // if a direction is already locked for this segment, highlight that wedge
+  if(strokeSegDir){
+    const idx = DIR_ORDER.indexOf(strokeSegDir);
+    if(idx>=0){
+      const a = idx*45*Math.PI/180;
+      ctx.strokeStyle = SHAPE_COLORS[activeEnemy&&activeEnemy.shapeName] || '#39d98a';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(0,0);
+      ctx.lineTo(Math.cos(a)*STROKE_SEGMENT_CONFIRM_DIST*1.4, Math.sin(a)*STROKE_SEGMENT_CONFIRM_DIST*1.4);
+      ctx.stroke();
+    }
+  }
+  ctx.restore();
+}
+
+function lerpRGB(c1, c2, t){
+  return [
+    Math.round(c1[0]+(c2[0]-c1[0])*t),
+    Math.round(c1[1]+(c2[1]-c1[1])*t),
+    Math.round(c1[2]+(c2[2]-c1[2])*t)
+  ];
+}
+
 function drawTrail(){
   const cutoff = now()-160;
   const pts = trail.filter(p=>p.t>=cutoff);
   if(pts.length<2) return;
-  const [r,g,b] = TRAIL_COLORS[trailSettings.color].rgb;
+  const theme = TRAIL_COLORS[trailSettings.color];
+  const c1 = theme.rgb, c2 = theme.rgb2 || theme.rgb;
   const style = trailSettings.style;
   ctx.save(); ctx.lineCap='round'; ctx.lineJoin='round';
 
@@ -2610,6 +2717,7 @@ function drawTrail(){
     for(let off=-1; off<=1; off+=2){
       for(let i=1;i<pts.length;i++){
         const a = i/pts.length;
+        const [r,g,b] = lerpRGB(c1,c2,a);
         ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.5})`;
         ctx.lineWidth = 2.2;
         ctx.beginPath();
@@ -2617,9 +2725,10 @@ function drawTrail(){
         ctx.stroke();
       }
     }
-    ctx.shadowColor = `rgba(${r},${g},${b},0.95)`; ctx.shadowBlur = 20;
     for(let i=1;i<pts.length;i++){
       const a = i/pts.length;
+      const [r,g,b] = lerpRGB(c1,c2,a);
+      ctx.shadowColor = `rgba(${r},${g},${b},0.95)`; ctx.shadowBlur = 20;
       ctx.strokeStyle = `rgba(255,255,255,${a*0.98})`;
       ctx.lineWidth = 1+a*1.6;
       ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
@@ -2627,97 +2736,109 @@ function drawTrail(){
     ctx.shadowBlur = 0;
     // bright flash burst right at the leading edge (freshest point)
     const tip = pts[pts.length-1];
+    const [tr,tg,tb] = c2;
     const flashR = ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,26);
     flashR.addColorStop(0,'rgba(255,255,255,0.9)');
-    flashR.addColorStop(0.4,`rgba(${r},${g},${b},0.55)`);
-    flashR.addColorStop(1,`rgba(${r},${g},${b},0)`);
+    flashR.addColorStop(0.4,`rgba(${tr},${tg},${tb},0.55)`);
+    flashR.addColorStop(1,`rgba(${tr},${tg},${tb},0)`);
     ctx.fillStyle = flashR;
     ctx.beginPath(); ctx.arc(tip.x,tip.y,26,0,Math.PI*2); ctx.fill();
   } else if(style==='electric'){
-    // dense crackling bolt: thick glowing core with frequent jagged
-    // branches AND small floating spark particles along the whole path
+    // dense crackling bolt: thick glowing core, frequent jagged branches,
+    // AND a scattered halo of little sparks flying off around the whole
+    // path (not just riding directly on the line) for a much busier,
+    // more electric feel.
     for(let i=1;i<pts.length;i++){
       const a = i/pts.length;
-      ctx.shadowColor = `rgba(${r},${g},${b},1)`; ctx.shadowBlur = 18;
+      const [r,g,b] = lerpRGB(c1,c2,a);
+      ctx.shadowColor = `rgba(${r},${g},${b},1)`; ctx.shadowBlur = 24;
       ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.95})`;
-      ctx.lineWidth = 2.5+a*4.5;
+      ctx.lineWidth = 3+a*5.5;
       ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
       ctx.shadowBlur = 0;
       ctx.strokeStyle = `rgba(255,255,255,${a*0.95})`;
-      ctx.lineWidth = 1+a*1.2;
+      ctx.lineWidth = 1+a*1.3;
       ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
 
       const dx=pts[i].x-pts[i-1].x, dy=pts[i].y-pts[i-1].y;
       const len=Math.hypot(dx,dy)||1;
       const nx=-dy/len, ny=dx/len;
-      // 1-2 jagged branches per segment, more frequent & longer than before
-      const branchCount = Math.random()<0.7 ? (Math.random()<0.3?2:1) : 0;
+      // 1-3 jagged branches per segment — noticeably busier than before
+      const branchCount = Math.random()<0.85 ? (Math.random()<0.4?2:1)+(Math.random()<0.15?1:0) : 0;
       for(let bIdx=0; bIdx<branchCount; bIdx++){
         const mx=pts[i-1].x+dx*Math.random(), my=pts[i-1].y+dy*Math.random();
-        const off=(Math.random()-0.5)*34;
+        const off=(Math.random()-0.5)*46;
         const kx=mx+nx*off, ky=my+ny*off;
-        const midx=(mx+kx)/2+(Math.random()-0.5)*8, midy=(my+ky)/2+(Math.random()-0.5)*8;
-        ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.9})`;
+        const midx=(mx+kx)/2+(Math.random()-0.5)*10, midy=(my+ky)/2+(Math.random()-0.5)*10;
+        const [br,bg,bb] = lerpRGB(c1,c2,Math.random());
+        ctx.strokeStyle = `rgba(${br},${bg},${bb},${a*0.85})`;
         ctx.lineWidth = 1.4;
         ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(midx,midy); ctx.lineTo(kx,ky); ctx.stroke();
       }
-      // little spark particles
-      if(Math.random()<0.5){
-        const sx = pts[i].x + (Math.random()-0.5)*20, sy = pts[i].y + (Math.random()-0.5)*20;
-        ctx.fillStyle = `rgba(255,255,255,${0.5+Math.random()*0.5})`;
-        ctx.beginPath(); ctx.arc(sx,sy, 1+Math.random()*1.6, 0, Math.PI*2); ctx.fill();
+      // scattered sparks flying off around the path, not just riding on it
+      const sparkCount = Math.random()<0.7 ? 1+Math.floor(Math.random()*2) : 0;
+      for(let s=0;s<sparkCount;s++){
+        const sx = pts[i].x + (Math.random()-0.5)*44, sy = pts[i].y + (Math.random()-0.5)*44;
+        const sr = 0.8+Math.random()*1.8;
+        ctx.fillStyle = Math.random()<0.5 ? `rgba(255,255,255,${0.4+Math.random()*0.5})` : `rgba(${c2[0]},${c2[1]},${c2[2]},${0.4+Math.random()*0.4})`;
+        ctx.beginPath(); ctx.arc(sx,sy,sr,0,Math.PI*2); ctx.fill();
       }
     }
+    // a bright, slightly flickering burst at the leading tip
+    const tip = pts[pts.length-1];
+    const flick = 0.7+Math.random()*0.3;
+    const eg = ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,22);
+    eg.addColorStop(0, `rgba(255,255,255,${0.9*flick})`);
+    eg.addColorStop(0.5, `rgba(${c1[0]},${c1[1]},${c1[2]},${0.5*flick})`);
+    eg.addColorStop(1, `rgba(${c1[0]},${c1[1]},${c1[2]},0)`);
+    ctx.fillStyle = eg;
+    ctx.beginPath(); ctx.arc(tip.x,tip.y,22,0,Math.PI*2); ctx.fill();
   } else if(style==='energy'){
-    // big soft nebula-like aura: several wide, heavily-blurred offset
-    // ribbons layered together (reference: swirling translucent energy),
-    // plus a bright core and a few drifting glow particles
+    // soft aura, kept intentionally light — a couple of gently offset
+    // translucent passes plus a clean bright core, not a big blurry cloud
     ctx.globalCompositeOperation = 'lighter';
-    for(let layer=4; layer>=0; layer--){
-      const spread = layer*5;
-      const wob = layer*2.2;
-      ctx.shadowColor = `rgba(${r},${g},${b},0.6)`; ctx.shadowBlur = 22;
-      ctx.strokeStyle = `rgba(${r},${g},${b},${0.10})`;
-      ctx.lineWidth = 22+layer*7;
-      ctx.beginPath();
-      for(let i=0;i<pts.length;i++){
-        const w = Math.sin(i*0.7+layer)*wob;
-        const px = pts[i].x+spread+w, py = pts[i].y-spread+w;
-        if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+    for(let layer=1; layer>=0; layer--){
+      const spread = layer*3;
+      for(let i=1;i<pts.length;i++){
+        const a = i/pts.length;
+        const [r,g,b] = lerpRGB(c1,c2,a);
+        ctx.strokeStyle = `rgba(${r},${g},${b},0.14)`;
+        ctx.lineWidth = 10+a*9-layer*2;
+        ctx.beginPath();
+        ctx.moveTo(pts[i-1].x+spread, pts[i-1].y-spread);
+        ctx.lineTo(pts[i].x+spread, pts[i].y-spread);
+        ctx.stroke();
       }
-      ctx.stroke();
-      ctx.beginPath();
-      for(let i=0;i<pts.length;i++){
-        const w = Math.cos(i*0.7+layer)*wob;
-        const px = pts[i].x-spread+w, py = pts[i].y+spread+w;
-        if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
-      }
-      ctx.stroke();
-    }
-    ctx.shadowBlur = 0;
-    for(let i=1;i<pts.length;i++){
-      const a = i/pts.length;
-      ctx.strokeStyle = `rgba(255,255,255,${a*0.75})`;
-      ctx.lineWidth = 2.5+a*3;
-      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
     }
     ctx.globalCompositeOperation = 'source-over';
-    // a couple of soft drifting glow motes for extra sparkle
-    for(let k=0;k<3;k++){
-      const p = pts[Math.floor(Math.random()*pts.length)];
-      const mx = p.x+(Math.random()-0.5)*30, my = p.y+(Math.random()-0.5)*30;
-      const g2 = ctx.createRadialGradient(mx,my,0,mx,my,10);
-      g2.addColorStop(0, `rgba(${r},${g},${b},0.5)`); g2.addColorStop(1, `rgba(${r},${g},${b},0)`);
-      ctx.fillStyle=g2; ctx.beginPath(); ctx.arc(mx,my,10,0,Math.PI*2); ctx.fill();
+    for(let i=1;i<pts.length;i++){
+      const a = i/pts.length;
+      const [r,g,b] = lerpRGB(c1,c2,a);
+      ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.55})`;
+      ctx.lineWidth = 3+a*4;
+      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+    }
+    for(let i=1;i<pts.length;i++){
+      const a = i/pts.length;
+      ctx.strokeStyle = `rgba(255,255,255,${a*0.6})`;
+      ctx.lineWidth = 1.6+a*1.6;
+      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
     }
   } else {
-    // classic — simple width-tapered stroke
+    // classic — width-tapered gradient stroke with a soft glow and a
+    // bright leading tip, tuned to look good as the un-styled default
     for(let i=1;i<pts.length;i++){
       const a = (i/pts.length);
-      ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.9})`;
+      const [r,g,b] = lerpRGB(c1,c2,a);
+      ctx.shadowColor = `rgba(${r},${g},${b},0.6)`; ctx.shadowBlur = 10;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.92})`;
       ctx.lineWidth = 3+a*7;
       ctx.beginPath(); ctx.moveTo(pts[i-1].x, pts[i-1].y); ctx.lineTo(pts[i].x, pts[i].y); ctx.stroke();
     }
+    ctx.shadowBlur = 0;
+    const tip = pts[pts.length-1];
+    ctx.fillStyle = `rgba(255,255,255,0.55)`;
+    ctx.beginPath(); ctx.arc(tip.x,tip.y,3.5,0,Math.PI*2); ctx.fill();
   }
   ctx.restore();
 }
@@ -2795,6 +2916,8 @@ function render(){
     drawParticles();
     drawFloatingTexts();
     drawTrail();
+    if(testState.active) drawStrokeRecognitionDebug();
+    drawFinisherFx();
   } else {
     drawPlayer();
   }
