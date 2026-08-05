@@ -222,7 +222,7 @@
 "use strict";
 
 /* ============================== SPRITES ============================== */
-// Enemy art: 8 characters, each with a 6-frame run cycle and a 4-frame
+// Enemy art: each character has a 6-frame run cycle and a 4-frame
 // attack cycle (played when the enemy successfully hits the player).
 // Frames are loaded from external PNG files under assets/sprites/<key>/,
 // so no image data is embedded in this HTML file.
@@ -234,13 +234,36 @@ const SPRITE_META = {
   ghost:    { kor:'유령',   color:'#c9b8e8' },
   robot:    { kor:'로봇',   color:'#4fd1c5' },
   cactus:   { kor:'선인장', color:'#7cb342' },
-  cat:      { kor:'고양이', color:'#e0b84a' }
+  cat:      { kor:'고양이', color:'#e0b84a' },
+  // second batch of 8 regular mobs
+  skeleton:     { kor:'해골 병정',   color:'#c9c2b0' },
+  pirate_rat:   { kor:'해적 쥐',     color:'#c9705a' },
+  bee_robot:    { kor:'꿀벌 로봇',   color:'#f0c419' },
+  bomb_balloon: { kor:'폭탄 풍선',   color:'#9b6bd9' },
+  donut:        { kor:'도넛 몬스터', color:'#ff8fb3' },
+  mimic_chest:  { kor:'보물상자',    color:'#c98a3e' },
+  unicorn:      { kor:'유니콘',      color:'#f7b8e0' },
+  alien_squid:  { kor:'외계 문어',   color:'#3ec98a' }
 };
+// Bosses get their own dedicated art (see BOSS_SPRITE_KEYS / pickBossSpriteKey
+// below) instead of reusing the regular mob pool. Same {kor,color,run,atk}
+// shape as SPRITE_META, just merged into the same SPRITES lookup under
+// distinct keys so every existing SPRITES[e.spriteKey] call site keeps
+// working unchanged regardless of whether an enemy is a regular mob or boss.
+const BOSS_SPRITE_META = {
+  boss_cake_king:    { kor:'케이크 킹',      color:'#e85d75' },
+  boss_ufo:          { kor:'우주 UFO',       color:'#8a6bd9' },
+  boss_burger:       { kor:'거대 햄버거',    color:'#e8973e' },
+  boss_octo_captain: { kor:'해적 문어선장',  color:'#e0524a' },
+  boss_tv_master:    { kor:'마법 TV 마스터', color:'#7a5ba6' }
+};
+const BOSS_SPRITE_KEYS = Object.keys(BOSS_SPRITE_META);
 const SPRITE_RUN_FRAMES = 6;
 const SPRITE_ATK_FRAMES = 4;
 const SPRITE_KEYS = Object.keys(SPRITE_META);
 const SPRITES = {};
-SPRITE_KEYS.forEach(key=>{
+Object.assign(SPRITE_META, BOSS_SPRITE_META); // so the loader below covers both pools in one pass
+Object.keys(SPRITE_META).forEach(key=>{
   const meta = SPRITE_META[key];
   const base = 'assets/sprites/' + key + '/';
   const toImg = src => { const img = new Image(); img.src = src; return img; };
@@ -250,7 +273,39 @@ SPRITE_KEYS.forEach(key=>{
   for(let i=0;i<SPRITE_ATK_FRAMES;i++) atkImgs.push(toImg(base+'atk_'+i+'.png'));
   SPRITES[key] = { kor: meta.kor, color: meta.color, runImgs, atkImgs };
 });
+function pickBossSpriteKey(){ return pick(BOSS_SPRITE_KEYS); }
 const RUN_FRAME_DUR = 0.12; // seconds per run-cycle frame
+
+/* ============================== PLAYER SPRITES ============================== */
+// Back-view player character: 3 attack animations (each a 6-frame set),
+// mapped 1:1 to the hit-judgement system — see succeedEnemy():
+//   GOOD success                                         -> 'good'     (기본공격/발도술)
+//   PERFECT success                                       -> 'perfect'  (특수공격/2번 베기)
+//   PERFECT hit on a boss (triggers the finisher slow-mo) -> 'finisher' (필살기/Z자 베기)
+// Each attack also has a matching skill-effect overlay (fx_<name>), drawn at
+// the same frame index alongside the character during that animation.
+const PLAYER_ANIM_KEYS = ['good','perfect','finisher'];
+const PLAYER_ANIM_FRAMES = 6;
+const PLAYER_SPRITES = {};
+const PLAYER_FX_SPRITES = {};
+PLAYER_ANIM_KEYS.forEach(name=>{
+  const run = [];
+  const fxRun = [];
+  for(let i=0;i<PLAYER_ANIM_FRAMES;i++){
+    const img = new Image(); img.src = `assets/player/${name}_${i}.png`; run.push(img);
+    const fx = new Image(); fx.src = `assets/player/fx_${name}_${i}.png`; fxRun.push(fx);
+  }
+  PLAYER_SPRITES[name] = { run };
+  PLAYER_FX_SPRITES[name] = { run: fxRun };
+});
+// on-screen height (px) every player frame is scaled to (width follows each
+// frame's own aspect ratio) — see drawPlayer()
+const PLAYER_SPRITE_HEIGHT = 168;
+// how long each animation plays for (real seconds) before returning to idle;
+// finisher is deliberately long so it reads clearly through the boss-hit slow-mo
+const PLAYER_ANIM_DUR = { good:0.26, perfect:0.30, finisher:0.85 };
+
+
 
 /* ============================== CONFIG ============================== */
 
@@ -396,7 +451,7 @@ let earlyDir = null;
 let trail = [];
 let lastTapPos = {x:0,y:0};
 
-let playerAnim = { bob:0, slashT:-1, hitT:-1 };
+let playerAnim = { bob:0, hitT:-1, anim:null, animT:0 };
 let patternPopT = 1;
 
 let running = false;
@@ -849,6 +904,11 @@ function spawnBossPhase(template, forceGimmick, isFirstPhase=true){
     e.reverse = pick==='reverse';
   }
   e.isBoss = true;
+  // dedicated boss art — one sprite chosen per encounter (bossFight.spriteKey)
+  // and reused for every phase/retry, so the boss doesn't change appearance
+  // mid-fight. Falls back to a random pick if called outside a bossFight
+  // (shouldn't normally happen, but keeps this function safe standalone).
+  e.spriteKey = (bossFight && bossFight.spriteKey) || pickBossSpriteKey();
   e.name = `보스 · ${SPRITES[e.spriteKey].kor}`;
   e.color = '#ff3b57';
   e.dmg = Math.round(e.dmg*1.7);
@@ -921,7 +981,7 @@ function resetGame(){
   lastKind=null; kindStreak=0; lastEnemySignature=null;
   timeScale=1; slowmoUntilReal=0;
   particles=[]; floatingTexts=[]; slashFx=[]; shakeMag=0; perfectStreak=0; hitStopUntilReal=0; zoomPunch=0;
-  playerAnim={bob:0, slashT:-1, hitT:-1};
+  playerAnim={bob:0, hitT:-1, anim:null, animT:0};
   updateHUD();
 }
 
@@ -1093,7 +1153,7 @@ function startTest(type, len, gimmick){
   document.getElementById('testConfigLabel').textContent = label;
 
   activeEnemy=null; queue=[]; dyingEnemies=[]; particles=[]; floatingTexts=[]; wave=null; bossFight=null;
-  playerAnim={bob:0, slashT:-1, hitT:-1};
+  playerAnim={bob:0, hitT:-1, anim:null, animT:0};
   slashFx=[]; shakeMag=0; perfectStreak=0; hitStopUntilReal=0; zoomPunch=0;
 
   spawnTestEnemy();
@@ -1244,7 +1304,7 @@ function spawnWave(){
   // quota met — nothing left in flight, so resolve the boss (if any) or move on
   if(activeEnemy || queue.length>0) return;
   if(st.boss){
-    bossFight = { hitsLanded:0, hitsNeeded: st.boss.hits || st.boss.phases || BOSS_HITS_NEEDED, forceGimmick: st.boss.gimmick||null };
+    bossFight = { hitsLanded:0, hitsNeeded: st.boss.hits || st.boss.phases || BOSS_HITS_NEEDED, forceGimmick: st.boss.gimmick||null, spriteKey: pickBossSpriteKey() };
     queue.push(spawnBossPhase(null, bossFight.forceGimmick, true));
     activateNext();
     spawnCooldown = 3.4;
@@ -1497,6 +1557,55 @@ function angleForDir(d){
   return i>=0 ? i*45*Math.PI/180 : 0;
 }
 
+// Draws a shape-combo pattern (V/역V/Z/번개) as ONE connected path built from
+// its exact SHAPE_COMBOS directions, centered at the current transform's
+// origin — so what's shown is a literal preview of the stroke to draw, not
+// an abstraction of it. Segments already cleared (i<stepIndex) draw green,
+// the current segment glows white, remaining ones stay dim.
+function drawShapeGlyph(pattern, stepIndex, size){
+  const segLen = size*0.42;
+  const pts = [{x:0,y:0}];
+  let x=0, y=0;
+  for(let i=0;i<pattern.length;i++){
+    const a = angleForDir(pattern[i]);
+    x += Math.cos(a)*segLen; y += Math.sin(a)*segLen;
+    pts.push({x,y});
+  }
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  pts.forEach(p=>{ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y); });
+  const ox=(minX+maxX)/2, oy=(minY+maxY)/2;
+
+  ctx.save();
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  for(let i=0;i<pattern.length;i++){
+    const done = i<stepIndex;
+    const isCur = i===stepIndex;
+    const p0=pts[i], p1=pts[i+1];
+    ctx.shadowBlur = 0;
+    if(isCur){ ctx.shadowColor='#fff6cf'; ctx.shadowBlur=22; }
+    ctx.strokeStyle = done ? '#39d98a' : isCur ? '#fff' : 'rgba(255,255,255,0.35)';
+    ctx.lineWidth = size*(isCur ? 0.10 : 0.075);
+    ctx.beginPath();
+    ctx.moveTo(p0.x-ox, p0.y-oy);
+    ctx.lineTo(p1.x-ox, p1.y-oy);
+    ctx.stroke();
+  }
+  ctx.shadowBlur = 0;
+  // arrowhead on the final point, showing overall travel direction
+  const last = pts[pts.length-1], prev = pts[pts.length-2];
+  const endAngle = Math.atan2(last.y-prev.y, last.x-prev.x);
+  const ah = size*0.11;
+  const ex=last.x-ox, ey=last.y-oy;
+  ctx.strokeStyle = (stepIndex>=pattern.length) ? '#39d98a' : 'rgba(255,255,255,0.7)';
+  ctx.lineWidth = size*0.075;
+  ctx.beginPath();
+  ctx.moveTo(ex - Math.cos(endAngle-2.5)*ah, ey - Math.sin(endAngle-2.5)*ah);
+  ctx.lineTo(ex, ey);
+  ctx.lineTo(ex - Math.cos(endAngle+2.5)*ah, ey - Math.sin(endAngle+2.5)*ah);
+  ctx.stroke();
+  ctx.restore();
+}
+
 function succeedEnemy(){
   const e = activeEnemy;
   const used = e.timeLimit - e.timer;
@@ -1505,11 +1614,15 @@ function succeedEnemy(){
 
   if(judge.label==='PERFECT') perfectStreak++; else perfectStreak=0;
   const tier = fxTier();
+  // finisher animation/slow-mo only fires on a PERFECT hit against a boss;
+  // any other successful hit plays 'good' (LATE included) or 'perfect'
+  const isFinisherHit = e.isBoss && judge.label==='PERFECT';
 
   const pos = currentEnemyScreenPos(e);
   spawnParticles(pos.x,pos.y, judge.color, (e.isBoss?36:18) + tier*8);
   spawnFloatText(pos.x,pos.y-40*pos.scale-10, judge.label, judge.color);
-  playerAnim.slashT = 0;
+  playerAnim.anim = isFinisherHit ? 'finisher' : (judge.label==='PERFECT' ? 'perfect' : 'good');
+  playerAnim.animT = 0;
   if(judge.label==='PERFECT'){
     flashScreen('white');
     hitStopUntilReal = now() + 45; // ~45ms freeze for a punchy hit-stop
@@ -1530,7 +1643,7 @@ function succeedEnemy(){
   if(e.isBoss) playBossHitSound();
   hapticPulse(judge.label==='PERFECT'? 18 : judge.label==='GOOD'? 10 : 6);
 
-  if(e.isBoss && judge.label==='PERFECT'){
+  if(isFinisherHit){
     triggerBossFinisher();
     spawnParticles(pos.x,pos.y,'#f0c419', 30);
     spawnParticles(pos.x,pos.y,'#fff6cf', 18);
@@ -1831,7 +1944,11 @@ function update(dtReal){
       }
     }
 
-    if(playerAnim.slashT>=0){ playerAnim.slashT += dtReal*3.2; if(playerAnim.slashT>1) playerAnim.slashT=-1; }
+    if(playerAnim.anim){
+      const dur = PLAYER_ANIM_DUR[playerAnim.anim] || 0.3;
+      playerAnim.animT += dtReal/dur;
+      if(playerAnim.animT>1){ playerAnim.anim=null; playerAnim.animT=0; }
+    }
     if(playerAnim.hitT>=0){ playerAnim.hitT += dtReal*3.2; if(playerAnim.hitT>1) playerAnim.hitT=-1; }
 
     if(gameState==='playing') updateHUD();
@@ -2019,58 +2136,44 @@ function drawPlayer(){
   let tilt = 0;
   if(playerAnim.hitT>=0) tilt = Math.sin(playerAnim.hitT*Math.PI)*0.14;
 
+  const anim = playerAnim.anim;              // null (idle) | 'good' | 'perfect' | 'finisher'
+  const animKey = anim || 'good';
+  const frameIdx = anim ? clamp(Math.floor(playerAnim.animT*PLAYER_ANIM_FRAMES), 0, PLAYER_ANIM_FRAMES-1) : 0;
+  const bodyImg = PLAYER_SPRITES[animKey].run[frameIdx];
+
   ctx.save();
   ctx.translate(cx+sway, baseY+bob);
   ctx.rotate(tilt);
   ctx.scale(PLAYER_SCALE, PLAYER_SCALE);
 
+  // soft ground shadow
   ctx.save(); ctx.translate(0,10); ctx.scale(1,0.22);
   ctx.beginPath(); ctx.arc(0,0,58,0,Math.PI*2);
   ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fill();
   ctx.restore();
 
-  ctx.fillStyle='#1c2036';
-  ctx.beginPath();
-  ctx.moveTo(-46,-70); ctx.quadraticCurveTo(-70,10,-30,30); ctx.lineTo(30,30);
-  ctx.quadraticCurveTo(70,10,46,-70); ctx.closePath(); ctx.fill();
-
-  ctx.fillStyle='#2b3350';
-  ctx.beginPath(); ctx.roundRect(-40,-98,80,72,18); ctx.fill();
-
-  ctx.fillStyle='#181b2a';
-  ctx.beginPath(); ctx.arc(0,-118,26,0,Math.PI*2); ctx.fill();
-  ctx.fillStyle='#12141f';
-  ctx.beginPath(); ctx.roundRect(-16,-142,32,20,10); ctx.fill();
-
-  const tier = fxTier();
-  const slashActive = playerAnim.slashT>=0;
-  const swingSpan = 1.9 + tier*0.35; // bigger, more dramatic swing at higher perfect-streak tiers
-  const swAngle = slashActive ? (-1.15 + playerAnim.slashT*swingSpan) : -0.95;
-  ctx.save();
-  ctx.translate(38,-60);
-  ctx.rotate(swAngle);
-  ctx.fillStyle='#394463';
-  ctx.beginPath(); ctx.roundRect(-8,-8,16,46,8); ctx.fill();
-  ctx.fillStyle = slashActive ? (tier>=2 ? '#ffd9e0' : '#fff6cf') : '#c7cfe0';
-  if(slashActive && tier>=1){ ctx.shadowColor = tier>=2? 'rgba(255,140,170,0.9)':'rgba(240,196,25,0.8)'; ctx.shadowBlur = 14+tier*6; }
-  ctx.fillRect(-4,-64,8,58);
-  ctx.shadowBlur=0;
-  ctx.fillStyle='#8a6a2f';
-  ctx.fillRect(-9,-10,18,10);
-  ctx.restore();
-
-  // extra flourish trails at higher perfect-streak tiers
-  if(slashActive && tier>=1){
-    ctx.save();
-    ctx.globalAlpha = clamp(1-playerAnim.slashT,0,1)*0.7;
-    ctx.strokeStyle = tier>=2 ? 'rgba(255,140,170,0.85)' : 'rgba(240,196,25,0.8)';
-    ctx.lineWidth = 3+tier;
-    for(let k=0;k<tier;k++){
-      ctx.beginPath();
-      ctx.arc(38,-60, 50+k*14, swAngle-0.5, swAngle+0.2);
-      ctx.stroke();
+  // skill-effect overlay (drawn behind the body, same as the blade trailing
+  // out from behind the character in the reference art) synced to the same
+  // frame index, only while an attack animation is actually playing. Scaled
+  // by the SAME factor as the body (derived from this anim set's own body
+  // height) so the effect's size stays proportional to the character.
+  if(anim && bodyImg && bodyImg.naturalWidth){
+    const fxImg = PLAYER_FX_SPRITES[animKey].run[frameIdx];
+    if(fxImg && fxImg.naturalWidth){
+      const scale = PLAYER_SPRITE_HEIGHT / bodyImg.naturalHeight;
+      const fxH = fxImg.naturalHeight * scale;
+      const fxW = fxImg.naturalWidth * scale;
+      ctx.save();
+      ctx.globalAlpha = 0.95;
+      ctx.drawImage(fxImg, -fxW/2, -fxH, fxW, fxH);
+      ctx.restore();
     }
-    ctx.restore();
+  }
+
+  if(bodyImg && bodyImg.naturalWidth){
+    const drawH = PLAYER_SPRITE_HEIGHT;
+    const drawW = drawH * (bodyImg.naturalWidth/bodyImg.naturalHeight);
+    ctx.drawImage(bodyImg, -drawW/2, -drawH, drawW, drawH);
   }
 
   ctx.restore();
@@ -2175,6 +2278,32 @@ function drawPatternUI(e){
     );
     ctx.restore();
     barY = anchorY + 26;
+  } else if(e.shapeName){
+    // Shape-combo pattern (V/역V/Z/번개) — the whole thing is meant to be
+    // drawn as one continuous stroke (see strokeMode in the pointer
+    // handlers), so it's shown as ONE glyph tracing that exact path rather
+    // than a row of separate per-step arrow icons.
+    const iconSize = clamp(W*0.34, 100, 190);
+    const glyphY = anchorY + iconSize*0.46;
+
+    ctx.save();
+    ctx.globalAlpha = hidden? 0 : 0.85;
+    ctx.fillStyle = '#fff6cf';
+    ctx.font = "700 14px Rajdhani, sans-serif";
+    ctx.textAlign='center';
+    ctx.fillText(e.shapeName+' 모양 · 한 번에 이어 그리기!', cx, anchorY - 4);
+    ctx.restore();
+
+    ctx.save();
+    ctx.globalAlpha = hidden? 0 : 1;
+    const pop = patternPopT<1 ? (1-patternPopT)*0.5 : 0;
+    const pulse = 1 + Math.sin(now()/1000*6)*0.04 + pop;
+    ctx.translate(cx, glyphY);
+    ctx.scale(pulse, pulse);
+    drawShapeGlyph(e.pattern, e.stepIndex, iconSize);
+    ctx.restore();
+
+    barY = glyphY + iconSize*0.42 + 26;
   } else {
     // Whole sequence shown at once in a row (rather than revealing one step
     // at a time) so a 2+ step pattern can be read and planned in advance.
@@ -2184,25 +2313,6 @@ function drawPatternUI(e){
     const totalW = n*iconSize + (n-1)*gap;
     let x0 = cx - totalW/2 + iconSize/2;
     const rowY = anchorY + iconSize*0.56;
-
-    if(e.shapeName){
-      ctx.save();
-      ctx.globalAlpha = hidden? 0 : 0.85;
-      ctx.fillStyle = '#fff6cf';
-      ctx.font = "700 14px Rajdhani, sans-serif";
-      ctx.textAlign='center';
-      ctx.fillText(e.shapeName+' 모양 · 한 번에 이어 그리기!', cx, anchorY - 4);
-      ctx.restore();
-    }
-    if(e.reverse){
-      ctx.save();
-      ctx.globalAlpha = hidden? 0.15 : (0.75+0.25*Math.sin(now()/1000*10));
-      ctx.fillStyle = '#ff6b81';
-      ctx.font = "800 15px Rajdhani, sans-serif";
-      ctx.textAlign='center';
-      ctx.fillText('반대로 그으세요!', cx, anchorY - 4 - (e.shapeName?20:0));
-      ctx.restore();
-    }
 
     ctx.save();
     ctx.globalAlpha = hidden? 0 : 1;
