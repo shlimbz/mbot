@@ -131,6 +131,7 @@
     <div class="row1">
       <b class="num" id="testConfigLabel">테스트</b>
       <div style="display:flex; gap:6px;">
+        <button class="icon-btn" id="testTrailBtn" style="width:32px;height:32px;font-size:14px;">🎨</button>
         <button class="icon-btn" id="testSaveBtn" style="width:32px;height:32px;font-size:14px;">💾</button>
         <button class="icon-btn" id="testResetBtn" style="width:32px;height:32px;font-size:14px;">↺</button>
         <button class="icon-btn" id="testExitBtn" style="width:32px;height:32px;font-size:14px;">✕</button>
@@ -190,13 +191,16 @@
       <div>패턴 종류를 선택하면 체력/점수 없이 해당 패턴만 계속 반복 등장합니다. 판정 정확도를 검증해보세요.</div>
     </div>
     <button class="btn" id="testFinisherBtn" style="margin-top:10px;">⚡ 피니셔 시스템 테스트</button>
-    <div class="section-label" style="margin-top:14px;">블레이드 (방향 스와이프 · V·^·Z·⚡ 한번에 긋기)</div>
+    <div class="section-label" style="margin-top:14px;">블레이드 (방향 스와이프)</div>
     <div class="test-grid" id="bladeGrid"></div>
+    <div class="section-label">모양 (한번에 이어 긋기)</div>
+    <div class="test-grid" id="shapeGrid"></div>
     <div class="section-label">오브 (숫자 원 순서대로 탭)</div>
     <div class="test-grid" id="orbGrid"></div>
     <div class="section-label">기믹</div>
     <div class="test-grid" id="specialGrid"></div>
-    <button class="btn ghost" id="openTestLogBtn" style="margin-top:10px;">📋 저장된 기록 보기</button>
+    <button class="btn ghost" id="openTrailTestBtn" style="margin-top:10px;">🎨 스와이프 이펙트 테스트</button>
+    <button class="btn ghost" id="openTestLogBtn">📋 저장된 기록 보기</button>
     <button class="btn secondary" id="testBackBtn">뒤로</button>
   </div>
 </div>
@@ -369,6 +373,7 @@ const ORB_NUM_STYLES = [
   {stroke:'#ff9f4a', fill:'rgba(255,159,74,0.16)'}
 ];
 const SWIPE_MIN_DIST = 22;
+const STROKE_SEGMENT_CONFIRM_DIST = 34; // see pointerMove's strokeMode handling
 const EARLY_SAMPLE_DIST = 14;
 const REVERSAL_REJECT_STEPS = 3;
 
@@ -399,6 +404,11 @@ const ORB_TIME_MIN = 0.95;
 // than an equivalent number of separate swipes.
 const SHAPE_COMBO_CHANCE = 0.32;
 const SHAPE_COMBO_TIME_BONUS = 1.1;
+// isFlickerHidden's memorize-then-hide cycle needs ~1.6-2.3s before the
+// FIRST hide even happens (see initialShow there) — without this bonus, the
+// tightened time limits above can expire before the gimmick ever shows
+// itself, so a "화살표 점멸" pattern would just look like it never flickers.
+const FLICKER_TIME_BONUS = 1.3;
 
 // ---- STAGE PROGRESSION (5 stages, ~1000M each, 5000M run) ----
 // Each stage caps its own blade-step / orb-count pool, gates the two
@@ -407,10 +417,10 @@ const SHAPE_COMBO_TIME_BONUS = 1.1;
 // flavour — it's snapped to each stage's `end` value once the stage is
 // actually cleared, so the number and the real progress never drift apart.
 const STAGES = [
-  { id:1, start:0,    end:1000, bladeLevels:[1,2],   orbCounts:[3],    mobCount:10, flicker:false, reverse:false, boss:{ hits:3, gimmick:null } },
+  { id:1, start:0,    end:1000, bladeLevels:[1],     orbCounts:[3],    mobCount:10, flicker:false, reverse:false, boss:{ hits:3, gimmick:null } },
   { id:2, start:1000, end:2000, bladeLevels:[2,3],   orbCounts:[3],    mobCount:10, flicker:false, reverse:false, boss:null },
   { id:3, start:2000, end:3000, bladeLevels:[3,4],   orbCounts:[4],    mobCount:10, flicker:true,  reverse:false, boss:{ hits:3, gimmick:'flicker' } },
-  { id:4, start:3000, end:4000, bladeLevels:[4,5],   orbCounts:[5],    mobCount:10, flicker:true,  reverse:true,  boss:null },
+  { id:4, start:3000, end:4000, bladeLevels:[4,5],   orbCounts:[5],    mobCount:10, flicker:false, reverse:true,  boss:null },
   { id:5, start:4000, end:5000, bladeLevels:[5],     orbCounts:[6],    mobCount:10, flicker:true,  reverse:true,  boss:{ phases:5, gimmick:'random', final:true } },
 ];
 const BOSS_HITS_NEEDED = 3; // fallback default, actual stage bosses set their own hit/phase count above
@@ -918,7 +928,8 @@ function makeBladeEnemy(lenOverride){
   }
   const gm = pickGimmicks();
   gm.reverse = false; // reverse is orb-only (see point 7); flicker stays blade-only by design
-  const tl = Math.max(BLADE_TIME_MIN, (BLADE_TIME_BASE + BLADE_TIME_PER_STEP*len) * difficultyFactor() + (shapeName?SHAPE_COMBO_TIME_BONUS:0));
+  const tl = Math.max(BLADE_TIME_MIN, (BLADE_TIME_BASE + BLADE_TIME_PER_STEP*len) * difficultyFactor()
+    + (shapeName?SHAPE_COMBO_TIME_BONUS:0) + (gm.flicker?FLICKER_TIME_BONUS:0));
   return Object.assign(baseRuntime(), {
     typeKey:'blade', spriteKey, name: shapeName? `${sp.kor} (${shapeName})` : sp.kor, color:sp.color, pattern, shapeName,
     timeLimit:tl, timer:tl, dmg: 8+len*2, scoreVal: 90+len*45,
@@ -960,17 +971,26 @@ function spawnBossPhase(template, forceGimmick, isFirstPhase=true){
     e.shapeName = template.shapeName || null;
   } else if(pick){
     // flicker only makes sense on blade, reverse only on orb — pick the
-    // matching enemy kind so the forced gimmick is always valid
-    e = pick==='flicker' ? makeBladeEnemy() : makeOrbEnemy();
+    // matching enemy kind so the forced gimmick is always valid. Length is
+    // always drawn from the CURRENT STAGE's own range (bladeLen()/orbCount())
+    // — boss patterns should only ever be as hard as that stage's difficulty,
+    // never a shape combo's own independent length.
+    e = pick==='flicker' ? makeBladeEnemy(bladeLen()) : makeOrbEnemy(orbCount());
   } else {
-    e = Math.random()<0.4 ? makeOrbEnemy() : makeBladeEnemy();
+    // same reasoning: explicit stage-appropriate length, blade or orb mixed randomly
+    e = Math.random()<0.4 ? makeOrbEnemy(orbCount()) : makeBladeEnemy(bladeLen());
   }
   if(pick){
     // a template retry fixes the type, so flip the pick if it no longer matches
     if(pick==='flicker' && e.typeKey!=='blade') pick='reverse';
     if(pick==='reverse' && e.typeKey!=='orb') pick='flicker';
+    const hadFlickerBonus = e.flicker; // whether makeBladeEnemy() already budgeted FLICKER_TIME_BONUS
     e.flicker = pick==='flicker';
     e.reverse = pick==='reverse';
+    // keep the time budget in sync with the FINAL flicker state, since it's
+    // being forced here after makeBladeEnemy() already computed timeLimit
+    if(e.flicker && !hadFlickerBonus){ e.timeLimit += FLICKER_TIME_BONUS; e.timer = e.timeLimit; }
+    else if(!e.flicker && hadFlickerBonus){ e.timeLimit -= FLICKER_TIME_BONUS; e.timer = e.timeLimit; }
   }
   e.isBoss = true;
   // dedicated boss art — one sprite chosen per encounter (bossFight.spriteKey)
@@ -1162,15 +1182,22 @@ function resetTestStats(){
 
 function buildTestMenu(){
   const bladeGrid = document.getElementById('bladeGrid');
+  const shapeGrid = document.getElementById('shapeGrid');
   const orbGrid = document.getElementById('orbGrid');
   const specialGrid = document.getElementById('specialGrid');
-  bladeGrid.innerHTML=''; orbGrid.innerHTML=''; specialGrid.innerHTML='';
+  bladeGrid.innerHTML=''; shapeGrid.innerHTML=''; orbGrid.innerHTML=''; specialGrid.innerHTML='';
   for(let len=1; len<=5; len++){
     const b = document.createElement('button');
     b.className='test-opt'; b.textContent = len+'단계';
     b.addEventListener('click', ()=>startTest('blade', len));
     bladeGrid.appendChild(b);
   }
+  Object.keys(SHAPE_COMBOS).forEach(shape=>{
+    const b = document.createElement('button');
+    b.className='test-opt'; b.textContent = shape;
+    b.addEventListener('click', ()=>startTest('shape', 0, null, shape));
+    shapeGrid.appendChild(b);
+  });
   for(let n=3; n<=6; n++){
     const b = document.createElement('button');
     b.className='test-opt'; b.textContent = n+'개';
@@ -1229,20 +1256,20 @@ function buildTrailSettingsUI(){
 }
 function openTrailSettings(fromScreenId){
   trailSettingsReturnScreen = fromScreenId;
-  document.getElementById(fromScreenId).classList.add('hidden');
+  if(fromScreenId) document.getElementById(fromScreenId).classList.add('hidden');
   buildTrailSettingsUI();
   document.getElementById('trailSettingsScreen').classList.remove('hidden');
 }
 function closeTrailSettings(){
   document.getElementById('trailSettingsScreen').classList.add('hidden');
-  document.getElementById(trailSettingsReturnScreen).classList.remove('hidden');
+  if(trailSettingsReturnScreen) document.getElementById(trailSettingsReturnScreen).classList.remove('hidden');
 }
 
-function startTest(type, len, gimmick){
+function startTest(type, len, gimmick, shape){
   ensureAudio();
   resetTestStats();
   testState.active = true;
-  testState.config = {type, len, gimmick: gimmick||null};
+  testState.config = {type, len, gimmick: gimmick||null, shape: shape||null};
   stageIdx = 0; // baseline (no ambient gimmicks) — 'gimmick' tests force their flag explicitly regardless
   gameState = 'testing';
 
@@ -1255,8 +1282,10 @@ function startTest(type, len, gimmick){
 
   const gimmickLabel = gimmick==='flicker' ? '화살표 점멸' : gimmick==='reverse' ? '거꾸로 입력' : '';
   const label = type==='blade' ? `블레이드 · ${len}단계`
+    : type==='shape' ? `블레이드 · 모양 ${shape}`
     : type==='orb' ? `오브 · ${len}개`
     : type==='gimmick' ? `기믹 테스트 · ${gimmickLabel}`
+    : type==='freedraw' ? '스와이프 이펙트 테스트'
     : '피니셔 시스템';
   document.getElementById('testConfigLabel').textContent = label;
 
@@ -1264,7 +1293,7 @@ function startTest(type, len, gimmick){
   playerAnim={bob:0, hitT:-1, anim:null, animT:0};
   slashFx=[]; shakeMag=0; perfectStreak=0; hitStopUntilReal=0; zoomPunch=0;
 
-  spawnTestEnemy();
+  if(type!=='freedraw') spawnTestEnemy();
 
   updateTestHUD();
   lastFrameReal = now();
@@ -1278,12 +1307,31 @@ function spawnTestEnemy(){
   const cfg = testState.config;
   let e;
   if(cfg.type==='blade') e = makeBladeEnemy(cfg.len);
+  else if(cfg.type==='shape'){
+    // force the exact V/^/Z/⚡ pattern regardless of SHAPE_COMBO_CHANCE, so
+    // you can drill one specific shape instead of waiting for it to come up
+    const shapePattern = SHAPE_COMBOS[cfg.shape];
+    e = makeBladeEnemy(shapePattern.length);
+    e.pattern = shapePattern.slice();
+    e.shapeName = cfg.shape;
+    // recompute the time limit fresh so the shape bonus is included exactly
+    // once, regardless of whether makeBladeEnemy() happened to internally
+    // roll a (possibly different) shape at this same length
+    const baseTl = Math.max(BLADE_TIME_MIN, (BLADE_TIME_BASE + BLADE_TIME_PER_STEP*shapePattern.length) * difficultyFactor());
+    e.timeLimit = baseTl + SHAPE_COMBO_TIME_BONUS + (e.flicker?FLICKER_TIME_BONUS:0);
+    e.timer = e.timeLimit;
+  }
   else if(cfg.type==='orb') e = makeOrbEnemy(cfg.len);
   else if(cfg.type==='gimmick'){
     // flicker only makes sense on blade, reverse only on orb (see points 6/7)
     e = cfg.gimmick==='flicker' ? makeBladeEnemy() : makeOrbEnemy();
     e.flicker = cfg.gimmick==='flicker';
     e.reverse = cfg.gimmick==='reverse';
+    // makeBladeEnemy() computed timeLimit before we forced flicker on above,
+    // so it wouldn't have included FLICKER_TIME_BONUS — add it now, or the
+    // pattern can time out before the memorize→hide cycle ever gets a chance
+    // to actually hide anything
+    if(e.flicker){ e.timeLimit += FLICKER_TIME_BONUS; e.timer = e.timeLimit; }
   }
   else e = spawnBossPhase(); // 'finisher' test still exercises boss patterns
   e.state='active'; e.phase='approach'; e.approachTimer=e.approachDuration; e.stepIndex=0; e.timer=e.timeLimit;
@@ -1300,6 +1348,12 @@ function exitTest(){
 }
 
 function updateTestHUD(){
+  if(testState.config.type==='freedraw'){
+    document.getElementById('testStatsLine').textContent = '';
+    document.getElementById('testDebugLine').textContent =
+      `화면 아무 곳이나 드래그해서 트레일을 확인하세요. 🎨 버튼으로 색상·스타일을 바로 바꿀 수 있어요.`;
+    return;
+  }
   if(testState.config.type==='finisher'){
     const s = testState.stats;
     const rate = s.attempts ? Math.round((s.finisherHits||0)/s.attempts*100) : 0;
@@ -1327,6 +1381,8 @@ document.getElementById('openTrailBtnTitle').addEventListener('click', ()=>openT
 document.getElementById('openTrailBtnPause').addEventListener('click', ()=>openTrailSettings('pauseScreen'));
 document.getElementById('trailBackBtn').addEventListener('click', closeTrailSettings);
 document.getElementById('testFinisherBtn').addEventListener('click', ()=>startTest('finisher', 0));
+document.getElementById('openTrailTestBtn').addEventListener('click', ()=>startTest('freedraw', 0));
+document.getElementById('testTrailBtn').addEventListener('click', ()=>openTrailSettings(null));
 document.getElementById('testExitBtn').addEventListener('click', exitTest);
 document.getElementById('testResetBtn').addEventListener('click', ()=>{ resetTestStats(); updateTestHUD(); });
 
@@ -1876,11 +1932,16 @@ function pointerMove(x,y){
     if(!strokeModeActive()){ strokeMode=false; }
     else{
       const dx=x-strokeCheckX, dy=y-strokeCheckY, dist=Math.hypot(dx,dy);
-      if(dist>=SWIPE_MIN_DIST){
+      if(strokeSegDir===null){
+        // don't lock in a new segment's direction on the very first sample
+        // past SWIPE_MIN_DIST — right after a sharp corner (e.g. the ⚡
+        // pattern's left-right-left zigzag) a real finger rounds the turn a
+        // little, so the first few px can still point toward the bucket you
+        // just left. Waiting for a bit more travel lets it settle first.
+        if(dist>=STROKE_SEGMENT_CONFIRM_DIST) strokeSegDir = getGestureDirection(dx,dy,dist);
+      } else if(dist>=SWIPE_MIN_DIST){
         const bucket = getGestureDirection(dx,dy,dist);
-        if(strokeSegDir===null){
-          strokeSegDir = bucket;
-        } else if(bucket!==strokeSegDir){
+        if(bucket!==strokeSegDir){
           // direction turned enough to count as a new segment — resolve the
           // one that just finished, then start tracking the next from here
           const finishedDir = strokeSegDir;
@@ -2294,16 +2355,17 @@ function drawEnemyAt(e, x, y, scale, alpha){
 
 function isFlickerHidden(e){
   if(!e.flicker) return false;
-  // Blade-only memorize-then-recall gimmick. The very first reveal is held
-  // longer for longer patterns (more steps to read), then it settles into
-  // a short peek / long-hidden cycle — timed from when the challenge went
-  // active so the player always gets a fair first look.
+  // Memorize-then-recall gimmick: shown at first so you can read the
+  // pattern, then hidden through the middle of the attempt, then flashes
+  // back into view for a last look right before time runs out — testing
+  // whether you actually memorized it, not a repeating strobe.
   const len = e.pattern.length;
   const initialShow = 0.55 + 0.35*len; // e.g. ~1.6s for a 3-step pattern, ~2.3s for 5
+  const reminderShow = 0.7;            // reappears for the final 0.7s before timeout
   const t = (now() - (e.activeAt||now())) / 1000;
   if(t < initialShow) return false;
-  const cyc = (t - initialShow) % 1.15;
-  return cyc > 0.30;
+  if(t > e.timeLimit - reminderShow) return false;
+  return true;
 }
 
 function drawPatternUI(e){
