@@ -74,6 +74,12 @@
   .go-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:28px; color:var(--crimson-glow); letter-spacing:2px; margin:0 0 14px 0; }
   .section-label{ text-align:left; font-size:11.5px; color:var(--text-dim); letter-spacing:1.5px; margin-top:16px; }
   .test-grid{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .swatch-row{ display:flex; gap:10px; margin-top:8px; }
+  .swatch{ width:40px; height:40px; border-radius:50%; border:2px solid rgba(255,255,255,0.15); cursor:pointer; pointer-events:auto; box-shadow:0 0 0 0 transparent; transition:transform .12s ease, box-shadow .12s ease; }
+  .swatch.selected{ border-color:#fff; transform:scale(1.12); box-shadow:0 0 14px currentColor; }
+  .style-grid{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
+  .style-btn{ flex:1 1 40%; min-width:120px; padding:10px 8px; border-radius:10px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.05); color:var(--text-dim); font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; cursor:pointer; pointer-events:auto; text-align:center; }
+  .style-btn.selected{ border-color:var(--gold); color:var(--gold); background:rgba(240,196,25,0.12); }
   .test-opt{ flex:1 1 56px; padding:11px 6px; border-radius:12px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.06); color:var(--text); font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px; cursor:pointer; pointer-events:auto; transition:transform .1s; }
   .test-opt:active{ background:rgba(240,196,25,0.25); transform:scale(0.95); }
 
@@ -150,15 +156,30 @@
       <circle cx="75" cy="75" r="5" fill="var(--gold)"/>
     </svg>
     <div class="rules">
-      <div>공격범위에 들어온 적에게 방향 스와이프·<b>원 그리기</b>가 섞인 패턴이 뜨거나, 숫자 원이 화면에 흩어져 나타나면 <b>순서대로</b> 탭하세요.</div>
+      <div>공격범위에 들어온 적에게 방향 스와이프 패턴이 뜨거나, 숫자 원이 화면에 흩어져 나타나면 <b>순서대로</b> 탭하세요. <b>V·^·Z·⚡</b> 모양은 한 번에 이어 그릴 수 있어요.</div>
       <div>보스는 <b>3번 명중</b>시켜야 쓰러지며, <b>PERFECT</b> 판정으로 명중시키면 슬로모션 <b>피니셔</b>가 발동합니다. 처치하면 <b>체크포인트</b>가 저장됩니다.</div>
     </div>
     <button class="btn secondary" id="continueBtn" style="display:none;"></button>
     <button class="btn" id="startBtn">달리기 시작</button>
     <div style="display:flex; gap:8px; margin-top:10px;">
       <button class="btn ghost" id="openTestBtn" style="margin-top:0; flex:1;">🛠 테스트 모드</button>
+      <button class="btn ghost icon-btn" id="openTrailBtnTitle" style="margin-top:0; width:44px; flex:0 0 44px; pointer-events:auto;">🎨</button>
       <button class="btn ghost icon-btn" id="soundBtnTitle" style="margin-top:0; width:44px; flex:0 0 44px; pointer-events:auto;">🔊</button>
     </div>
+  </div>
+</div>
+
+<div class="overlay hidden" id="trailSettingsScreen">
+  <div class="panel">
+    <div class="go-title" style="color:var(--gold)">이펙트 설정</div>
+    <div class="rules" style="margin-top:0;">
+      <div>블레이드를 그릴 때 손가락을 따라가는 트레일의 <b>색상</b>과 <b>스타일</b>을 골라보세요.</div>
+    </div>
+    <div class="section-label">색상</div>
+    <div class="swatch-row" id="trailColorRow"></div>
+    <div class="section-label">스타일</div>
+    <div class="style-grid" id="trailStyleRow"></div>
+    <button class="btn secondary" id="trailBackBtn" style="margin-top:14px;">뒤로</button>
   </div>
 </div>
 
@@ -169,7 +190,7 @@
       <div>패턴 종류를 선택하면 체력/점수 없이 해당 패턴만 계속 반복 등장합니다. 판정 정확도를 검증해보세요.</div>
     </div>
     <button class="btn" id="testFinisherBtn" style="margin-top:10px;">⚡ 피니셔 시스템 테스트</button>
-    <div class="section-label" style="margin-top:14px;">블레이드 (방향 스와이프 + 원 그리기)</div>
+    <div class="section-label" style="margin-top:14px;">블레이드 (방향 스와이프 · V·^·Z·⚡ 한번에 긋기)</div>
     <div class="test-grid" id="bladeGrid"></div>
     <div class="section-label">오브 (숫자 원 순서대로 탭)</div>
     <div class="test-grid" id="orbGrid"></div>
@@ -211,6 +232,7 @@
     <div class="stat-row"><span>SCORE</span><b class="num" id="pauseScore">0</b></div>
     <div class="stat-row"><span>DISTANCE</span><b class="num" id="pauseDist">0 m</b></div>
     <button class="btn" id="resumeBtn">계속하기</button>
+    <button class="btn ghost" id="openTrailBtnPause">🎨 이펙트 설정</button>
     <button class="btn secondary" id="menuBtn">메인 메뉴로</button>
   </div>
 </div>
@@ -276,30 +298,25 @@ Object.keys(SPRITE_META).forEach(key=>{
 function pickBossSpriteKey(){ return pick(BOSS_SPRITE_KEYS); }
 const RUN_FRAME_DUR = 0.12; // seconds per run-cycle frame
 
-/* ============================== PLAYER SPRITES ============================== */
-// Back-view player character: 3 attack animations (each a 6-frame set),
-// mapped 1:1 to the hit-judgement system — see succeedEnemy():
-//   GOOD success                                         -> 'good'     (기본공격/발도술)
-//   PERFECT success                                       -> 'perfect'  (특수공격/2번 베기)
-//   PERFECT hit on a boss (triggers the finisher slow-mo) -> 'finisher' (필살기/Z자 베기)
-// Each attack also has a matching skill-effect overlay (fx_<name>), drawn at
-// the same frame index alongside the character during that animation.
+/* ============================== PLAYER FX (first-person) ============================== */
+// First-person view: there's no player character body on screen. Only the
+// skill-effect sprite (fx_<name>_N.png) flashes into view — like your own
+// blade swinging through frame — mapped 1:1 to the hit-judgement system,
+// see succeedEnemy():
+//   GOOD success                                         -> 'good'     (기본공격 이펙트)
+//   PERFECT success                                       -> 'perfect'  (특수공격 이펙트)
+//   PERFECT hit on a boss (triggers the finisher slow-mo) -> 'finisher' (필살기 이펙트)
 const PLAYER_ANIM_KEYS = ['good','perfect','finisher'];
 const PLAYER_ANIM_FRAMES = 6;
-const PLAYER_SPRITES = {};
 const PLAYER_FX_SPRITES = {};
 PLAYER_ANIM_KEYS.forEach(name=>{
-  const run = [];
   const fxRun = [];
   for(let i=0;i<PLAYER_ANIM_FRAMES;i++){
-    const img = new Image(); img.src = `assets/player/${name}_${i}.png`; run.push(img);
     const fx = new Image(); fx.src = `assets/player/fx_${name}_${i}.png`; fxRun.push(fx);
   }
-  PLAYER_SPRITES[name] = { run };
   PLAYER_FX_SPRITES[name] = { run: fxRun };
 });
-// on-screen height (px) every player frame is scaled to (width follows each
-// frame's own aspect ratio) — see drawPlayer()
+// on-screen height (px) the effect sprite is scaled to (width follows its own aspect ratio)
 const PLAYER_SPRITE_HEIGHT = 168;
 // how long each animation plays for (real seconds) before returning to idle;
 // finisher is deliberately long so it reads clearly through the boss-hit slow-mo
@@ -332,9 +349,9 @@ DIR_COLOR.tap = dirColor('tap',1);
 // discrete per-step swipes (see strokeMode in the pointer handlers below).
 const SHAPE_COMBOS = {
   'V':  ['downright','upright'],               // 계곡 모양
-  '역V': ['upright','downright'],               // 산 모양
+  '^':  ['upright','downright'],               // 산 모양 (역V)
   'Z':  ['right','downleft','right'],
-  '번개': ['downleft','downright','downleft']    // 지그재그
+  '⚡': ['downleft','downright','downleft']    // 지그재그 (번개)
 };
 
 const PLAYER_MAX_HP = 100;
@@ -476,6 +493,27 @@ function spawnSlashFx(x,y,color,angleRad,kind){
 /* ---- lightweight synthesized SFX (no audio files needed) ---- */
 let soundEnabled = true;
 try{ soundEnabled = localStorage.getItem('bladerush_sound') !== 'off'; }catch(e){}
+
+/* ---- blade-trail visual settings: color palette + effect style ---- */
+const TRAIL_COLORS = {
+  crimson: { label:'크림슨',   rgb:[255,92,122] },
+  cyan:    { label:'시안',     rgb:[80,200,255] },
+  gold:    { label:'골드',     rgb:[240,196,25] },
+  violet:  { label:'바이올렛', rgb:[170,110,255] },
+  emerald: { label:'에메랄드', rgb:[70,220,140] }
+};
+const TRAIL_STYLES = {
+  classic:  { label:'클래식' },       // simple width-tapered stroke (current default)
+  blade:    { label:'칼날 베기' },    // crisp white-hot core + colored glow, like real steel
+  electric: { label:'전격' },         // jagged sparking branches off the main line
+  energy:   { label:'에너지 오라' }   // soft layered translucent glow ribbons
+};
+let trailSettings = { color:'crimson', style:'classic' };
+try{
+  const saved = JSON.parse(localStorage.getItem('bladerush_trail')||'null');
+  if(saved && TRAIL_COLORS[saved.color] && TRAIL_STYLES[saved.style]) trailSettings = saved;
+}catch(e){}
+function saveTrailSettings(){ try{ localStorage.setItem('bladerush_trail', JSON.stringify(trailSettings)); }catch(e){} }
 
 let audioCtx = null;
 
@@ -1130,6 +1168,45 @@ function closeTestMenu(){
   document.getElementById('titleScreen').classList.remove('hidden');
 }
 
+let trailSettingsReturnScreen = 'titleScreen';
+function buildTrailSettingsUI(){
+  const colorRow = document.getElementById('trailColorRow');
+  colorRow.innerHTML = '';
+  Object.keys(TRAIL_COLORS).forEach(key=>{
+    const [r,g,b] = TRAIL_COLORS[key].rgb;
+    const el = document.createElement('div');
+    el.className = 'swatch' + (trailSettings.color===key ? ' selected' : '');
+    el.style.background = `rgb(${r},${g},${b})`;
+    el.style.color = `rgb(${r},${g},${b})`;
+    el.title = TRAIL_COLORS[key].label;
+    el.addEventListener('click', ()=>{
+      trailSettings.color = key; saveTrailSettings(); buildTrailSettingsUI();
+    });
+    colorRow.appendChild(el);
+  });
+  const styleRow = document.getElementById('trailStyleRow');
+  styleRow.innerHTML = '';
+  Object.keys(TRAIL_STYLES).forEach(key=>{
+    const el = document.createElement('button');
+    el.className = 'style-btn' + (trailSettings.style===key ? ' selected' : '');
+    el.textContent = TRAIL_STYLES[key].label;
+    el.addEventListener('click', ()=>{
+      trailSettings.style = key; saveTrailSettings(); buildTrailSettingsUI();
+    });
+    styleRow.appendChild(el);
+  });
+}
+function openTrailSettings(fromScreenId){
+  trailSettingsReturnScreen = fromScreenId;
+  document.getElementById(fromScreenId).classList.add('hidden');
+  buildTrailSettingsUI();
+  document.getElementById('trailSettingsScreen').classList.remove('hidden');
+}
+function closeTrailSettings(){
+  document.getElementById('trailSettingsScreen').classList.add('hidden');
+  document.getElementById(trailSettingsReturnScreen).classList.remove('hidden');
+}
+
 function startTest(type, len, gimmick){
   ensureAudio();
   resetTestStats();
@@ -1215,6 +1292,9 @@ function updateTestHUD(){
 
 document.getElementById('openTestBtn').addEventListener('click', ()=>{ buildTestMenu(); openTestMenu(); });
 document.getElementById('testBackBtn').addEventListener('click', closeTestMenu);
+document.getElementById('openTrailBtnTitle').addEventListener('click', ()=>openTrailSettings('titleScreen'));
+document.getElementById('openTrailBtnPause').addEventListener('click', ()=>openTrailSettings('pauseScreen'));
+document.getElementById('trailBackBtn').addEventListener('click', closeTrailSettings);
 document.getElementById('testFinisherBtn').addEventListener('click', ()=>startTest('finisher', 0));
 document.getElementById('testExitBtn').addEventListener('click', exitTest);
 document.getElementById('testResetBtn').addEventListener('click', ()=>{ resetTestStats(); updateTestHUD(); });
@@ -1555,55 +1635,6 @@ function currentEnemyScreenPos(e){
 function angleForDir(d){
   const i = DIR_ORDER.indexOf(d);
   return i>=0 ? i*45*Math.PI/180 : 0;
-}
-
-// Draws a shape-combo pattern (V/역V/Z/번개) as ONE connected path built from
-// its exact SHAPE_COMBOS directions, centered at the current transform's
-// origin — so what's shown is a literal preview of the stroke to draw, not
-// an abstraction of it. Segments already cleared (i<stepIndex) draw green,
-// the current segment glows white, remaining ones stay dim.
-function drawShapeGlyph(pattern, stepIndex, size){
-  const segLen = size*0.42;
-  const pts = [{x:0,y:0}];
-  let x=0, y=0;
-  for(let i=0;i<pattern.length;i++){
-    const a = angleForDir(pattern[i]);
-    x += Math.cos(a)*segLen; y += Math.sin(a)*segLen;
-    pts.push({x,y});
-  }
-  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
-  pts.forEach(p=>{ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y); });
-  const ox=(minX+maxX)/2, oy=(minY+maxY)/2;
-
-  ctx.save();
-  ctx.lineCap='round'; ctx.lineJoin='round';
-  for(let i=0;i<pattern.length;i++){
-    const done = i<stepIndex;
-    const isCur = i===stepIndex;
-    const p0=pts[i], p1=pts[i+1];
-    ctx.shadowBlur = 0;
-    if(isCur){ ctx.shadowColor='#fff6cf'; ctx.shadowBlur=22; }
-    ctx.strokeStyle = done ? '#39d98a' : isCur ? '#fff' : 'rgba(255,255,255,0.35)';
-    ctx.lineWidth = size*(isCur ? 0.10 : 0.075);
-    ctx.beginPath();
-    ctx.moveTo(p0.x-ox, p0.y-oy);
-    ctx.lineTo(p1.x-ox, p1.y-oy);
-    ctx.stroke();
-  }
-  ctx.shadowBlur = 0;
-  // arrowhead on the final point, showing overall travel direction
-  const last = pts[pts.length-1], prev = pts[pts.length-2];
-  const endAngle = Math.atan2(last.y-prev.y, last.x-prev.x);
-  const ah = size*0.11;
-  const ex=last.x-ox, ey=last.y-oy;
-  ctx.strokeStyle = (stepIndex>=pattern.length) ? '#39d98a' : 'rgba(255,255,255,0.7)';
-  ctx.lineWidth = size*0.075;
-  ctx.beginPath();
-  ctx.moveTo(ex - Math.cos(endAngle-2.5)*ah, ey - Math.sin(endAngle-2.5)*ah);
-  ctx.lineTo(ex, ey);
-  ctx.lineTo(ex - Math.cos(endAngle+2.5)*ah, ey - Math.sin(endAngle+2.5)*ah);
-  ctx.stroke();
-  ctx.restore();
 }
 
 function succeedEnemy(){
@@ -2128,54 +2159,28 @@ function drawRoad(horizonY, theme){
   ctx.restore();
 }
 
+// First-person view: there's no player character body on screen anymore —
+// only the skill-effect sprite flashes into view (like your own blade
+// swinging through frame) while an attack animation is playing. Idle = nothing.
 function drawPlayer(){
+  const anim = playerAnim.anim;
+  if(!anim) return;
   const cx = W/2;
   const baseY = H*0.975;
   const bob = Math.sin(playerAnim.bob)*3.5;
-  let sway = Math.sin(playerAnim.bob*0.5)*3;
-  let tilt = 0;
-  if(playerAnim.hitT>=0) tilt = Math.sin(playerAnim.hitT*Math.PI)*0.14;
+  const sway = Math.sin(playerAnim.bob*0.5)*3;
 
-  const anim = playerAnim.anim;              // null (idle) | 'good' | 'perfect' | 'finisher'
-  const animKey = anim || 'good';
-  const frameIdx = anim ? clamp(Math.floor(playerAnim.animT*PLAYER_ANIM_FRAMES), 0, PLAYER_ANIM_FRAMES-1) : 0;
-  const bodyImg = PLAYER_SPRITES[animKey].run[frameIdx];
+  const frameIdx = clamp(Math.floor(playerAnim.animT*PLAYER_ANIM_FRAMES), 0, PLAYER_ANIM_FRAMES-1);
+  const fxImg = PLAYER_FX_SPRITES[anim].run[frameIdx];
+  if(!fxImg || !fxImg.naturalWidth) return;
 
   ctx.save();
   ctx.translate(cx+sway, baseY+bob);
-  ctx.rotate(tilt);
   ctx.scale(PLAYER_SCALE, PLAYER_SCALE);
-
-  // soft ground shadow
-  ctx.save(); ctx.translate(0,10); ctx.scale(1,0.22);
-  ctx.beginPath(); ctx.arc(0,0,58,0,Math.PI*2);
-  ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fill();
-  ctx.restore();
-
-  // skill-effect overlay (drawn behind the body, same as the blade trailing
-  // out from behind the character in the reference art) synced to the same
-  // frame index, only while an attack animation is actually playing. Scaled
-  // by the SAME factor as the body (derived from this anim set's own body
-  // height) so the effect's size stays proportional to the character.
-  if(anim && bodyImg && bodyImg.naturalWidth){
-    const fxImg = PLAYER_FX_SPRITES[animKey].run[frameIdx];
-    if(fxImg && fxImg.naturalWidth){
-      const scale = PLAYER_SPRITE_HEIGHT / bodyImg.naturalHeight;
-      const fxH = fxImg.naturalHeight * scale;
-      const fxW = fxImg.naturalWidth * scale;
-      ctx.save();
-      ctx.globalAlpha = 0.95;
-      ctx.drawImage(fxImg, -fxW/2, -fxH, fxW, fxH);
-      ctx.restore();
-    }
-  }
-
-  if(bodyImg && bodyImg.naturalWidth){
-    const drawH = PLAYER_SPRITE_HEIGHT;
-    const drawW = drawH * (bodyImg.naturalWidth/bodyImg.naturalHeight);
-    ctx.drawImage(bodyImg, -drawW/2, -drawH, drawW, drawH);
-  }
-
+  ctx.globalAlpha = 0.95;
+  const fxH = PLAYER_SPRITE_HEIGHT;
+  const fxW = fxH * (fxImg.naturalWidth/fxImg.naturalHeight);
+  ctx.drawImage(fxImg, -fxW/2, -fxH, fxW, fxH);
   ctx.restore();
 }
 
@@ -2279,12 +2284,14 @@ function drawPatternUI(e){
     ctx.restore();
     barY = anchorY + 26;
   } else if(e.shapeName){
-    // Shape-combo pattern (V/역V/Z/번개) — the whole thing is meant to be
-    // drawn as one continuous stroke (see strokeMode in the pointer
-    // handlers), so it's shown as ONE glyph tracing that exact path rather
-    // than a row of separate per-step arrow icons.
-    const iconSize = clamp(W*0.34, 100, 190);
+    // Shape-combo pattern (V/^/Z/⚡) — the whole thing is meant to be drawn
+    // as one continuous stroke (see strokeMode in the pointer handlers), so
+    // it's shown as a single, simple symbol rather than a row of per-step
+    // arrow icons or a traced path.
+    const iconSize = clamp(W*0.28, 90, 150);
     const glyphY = anchorY + iconSize*0.46;
+    const done = e.stepIndex>=e.pattern.length;
+    const symColor = done ? '#39d98a' : '#fff6cf';
 
     ctx.save();
     ctx.globalAlpha = hidden? 0 : 0.85;
@@ -2300,7 +2307,14 @@ function drawPatternUI(e){
     const pulse = 1 + Math.sin(now()/1000*6)*0.04 + pop;
     ctx.translate(cx, glyphY);
     ctx.scale(pulse, pulse);
-    drawShapeGlyph(e.pattern, e.stepIndex, iconSize);
+    ctx.fillStyle = symColor;
+    ctx.font = `900 ${iconSize}px Rajdhani, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.shadowColor = symColor;
+    ctx.shadowBlur = 26;
+    ctx.fillText(e.shapeName, 0, iconSize*0.05);
+    ctx.shadowBlur = 0;
     ctx.restore();
 
     barY = glyphY + iconSize*0.42 + 26;
@@ -2468,12 +2482,79 @@ function drawTrail(){
   const cutoff = now()-160;
   const pts = trail.filter(p=>p.t>=cutoff);
   if(pts.length<2) return;
+  const [r,g,b] = TRAIL_COLORS[trailSettings.color].rgb;
+  const style = trailSettings.style;
   ctx.save(); ctx.lineCap='round'; ctx.lineJoin='round';
-  for(let i=1;i<pts.length;i++){
-    const a = (i/pts.length);
-    ctx.strokeStyle = `rgba(255,92,122,${a*0.9})`;
-    ctx.lineWidth = 3+a*7;
-    ctx.beginPath(); ctx.moveTo(pts[i-1].x, pts[i-1].y); ctx.lineTo(pts[i].x, pts[i].y); ctx.stroke();
+
+  if(style==='blade'){
+    // real-steel slash: soft colored glow underneath a crisp white-hot core
+    for(let i=1;i<pts.length;i++){
+      const a = i/pts.length;
+      ctx.shadowColor = `rgba(${r},${g},${b},0.85)`; ctx.shadowBlur = 16;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.55})`;
+      ctx.lineWidth = 9+a*9;
+      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    for(let i=1;i<pts.length;i++){
+      const a = i/pts.length;
+      ctx.strokeStyle = `rgba(255,255,255,${a*0.95})`;
+      ctx.lineWidth = 1.4+a*2.2;
+      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+    }
+  } else if(style==='electric'){
+    // main line plus jagged little sparks branching off perpendicular to it
+    for(let i=1;i<pts.length;i++){
+      const a = i/pts.length;
+      ctx.shadowColor = `rgba(${r},${g},${b},0.9)`; ctx.shadowBlur = 10;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.9})`;
+      ctx.lineWidth = 2+a*3.5;
+      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+      ctx.shadowBlur = 0;
+      if(Math.random()<0.55){
+        const mx=(pts[i-1].x+pts[i].x)/2, my=(pts[i-1].y+pts[i].y)/2;
+        const dx=pts[i].x-pts[i-1].x, dy=pts[i].y-pts[i-1].y;
+        const len=Math.hypot(dx,dy)||1;
+        const nx=-dy/len, ny=dx/len;
+        const off=(Math.random()-0.5)*22;
+        const kx=mx+nx*off, ky=my+ny*off;
+        ctx.strokeStyle = `rgba(255,255,255,${a*0.85})`;
+        ctx.lineWidth = 1.3;
+        ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(kx,ky); ctx.stroke();
+      }
+    }
+  } else if(style==='energy'){
+    // layered translucent glow ribbons (soft aura, several offset passes)
+    for(let layer=2; layer>=0; layer--){
+      const spread = layer*3.5;
+      for(let i=1;i<pts.length;i++){
+        const a = i/pts.length;
+        ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.16})`;
+        ctx.lineWidth = 16+a*18 - layer*3;
+        ctx.beginPath();
+        ctx.moveTo(pts[i-1].x+spread, pts[i-1].y-spread);
+        ctx.lineTo(pts[i].x+spread, pts[i].y-spread);
+        ctx.stroke();
+        ctx.beginPath();
+        ctx.moveTo(pts[i-1].x-spread, pts[i-1].y+spread);
+        ctx.lineTo(pts[i].x-spread, pts[i].y+spread);
+        ctx.stroke();
+      }
+    }
+    for(let i=1;i<pts.length;i++){
+      const a = i/pts.length;
+      ctx.strokeStyle = `rgba(255,255,255,${a*0.55})`;
+      ctx.lineWidth = 2+a*2.5;
+      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+    }
+  } else {
+    // classic — simple width-tapered stroke
+    for(let i=1;i<pts.length;i++){
+      const a = (i/pts.length);
+      ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.9})`;
+      ctx.lineWidth = 3+a*7;
+      ctx.beginPath(); ctx.moveTo(pts[i-1].x, pts[i-1].y); ctx.lineTo(pts[i].x, pts[i].y); ctx.stroke();
+    }
   }
   ctx.restore();
 }
