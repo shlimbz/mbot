@@ -353,9 +353,21 @@ const SHAPE_COMBOS = {
   'Z':  ['right','downleft','right'],
   '⚡': ['downleft','downright','downleft']    // 지그재그 (번개)
 };
+const SHAPE_COLORS = { 'V':'#63b3ff', '^':'#ff9f4a', 'Z':'#c9a0ff', '⚡':'#f0c419' };
 
 const PLAYER_MAX_HP = 100;
-const TAP_TARGET_RADIUS = 62;
+const TAP_TARGET_RADIUS = 46;
+// each orb number gets its own color so a multi-orb sequence reads as
+// distinct "notes" instead of a wall of identical blue circles; the
+// upcoming/"next" target still gets the gold highlight on top of this
+const ORB_NUM_STYLES = [
+  {stroke:'#63b3ff', fill:'rgba(99,179,255,0.16)'},
+  {stroke:'#ff6f91', fill:'rgba(255,111,145,0.16)'},
+  {stroke:'#8bc34a', fill:'rgba(139,195,74,0.16)'},
+  {stroke:'#c9a0ff', fill:'rgba(201,160,255,0.16)'},
+  {stroke:'#4fd1c5', fill:'rgba(79,209,197,0.16)'},
+  {stroke:'#ff9f4a', fill:'rgba(255,159,74,0.16)'}
+];
 const SWIPE_MIN_DIST = 22;
 const EARLY_SAMPLE_DIST = 14;
 const REVERSAL_REJECT_STEPS = 3;
@@ -374,12 +386,19 @@ const PLAYER_SCALE = 1.35;
 // Time limits tuned around average human reaction/execution speed:
 // simple visual reaction ~200-250ms, plus time to actually perform a swipe/tap.
 // These give a fair-but-tight window instead of the old overly generous ones.
-const BLADE_TIME_BASE = 0.45;     // s, time to react to the very first step appearing
-const BLADE_TIME_PER_STEP = 0.5;  // s, additional time per swipe step
-const BLADE_TIME_MIN = 0.65;
-const ORB_TIME_BASE = 0.5;        // s, time to spot the first orb
-const ORB_TIME_PER_ORB = 0.6;     // s, additional time per orb (search + tap)
-const ORB_TIME_MIN = 1.2;
+const BLADE_TIME_BASE = 0.36;     // s, time to react to the very first step appearing
+const BLADE_TIME_PER_STEP = 0.40; // s, additional time per swipe step
+const BLADE_TIME_MIN = 0.55;
+const ORB_TIME_BASE = 0.4;        // s, time to spot the first orb
+const ORB_TIME_PER_ORB = 0.48;    // s, additional time per orb (search + tap)
+const ORB_TIME_MIN = 0.95;
+// V/^/Z/⚡ shape-combo patterns (see SHAPE_COMBOS) — rolled independently of
+// the stage's normal step-count range so they show up in every stage (not
+// just ones whose bladeLevels happen to include a 2- or 3-step pattern), and
+// given extra time since drawing the whole shape in one stroke takes longer
+// than an equivalent number of separate swipes.
+const SHAPE_COMBO_CHANCE = 0.32;
+const SHAPE_COMBO_TIME_BONUS = 1.1;
 
 // ---- STAGE PROGRESSION (5 stages, ~1000M each, 5000M run) ----
 // Each stage caps its own blade-step / orb-count pool, gates the two
@@ -400,11 +419,11 @@ const BOSS_HITS_NEEDED = 3; // fallback default, actual stage bosses set their o
 // gradually across the run so each stage reads as its own little "biome"
 // even without custom art. Warms and brightens toward the finale.
 const STAGE_THEMES = [
-  { skyTop:'#0a0d1e', skyBottom:'#171b30', ground:['#1a1d33','#07080f'], road:['#20233a','#181a2c','#0d0e18'], accent:'rgba(239,43,77,0.5)', farMtn:'rgba(22,25,44,0.85)', nearMtn:'rgba(28,32,54,0.9)', star:true },
-  { skyTop:'#0b1224', skyBottom:'#182848', ground:['#182a3a','#070d16'], road:['#1e2f42','#182534','#0d1620'], accent:'rgba(64,168,255,0.55)', farMtn:'rgba(20,34,52,0.85)', nearMtn:'rgba(24,42,62,0.9)', star:true },
-  { skyTop:'#170c22', skyBottom:'#2c1440', ground:['#2a1638','#0d0616'], road:['#33193f','#241333','#120a1c'], accent:'rgba(200,90,255,0.55)', farMtn:'rgba(38,20,50,0.85)', nearMtn:'rgba(46,26,60,0.9)', star:true },
-  { skyTop:'#1e0e0c', skyBottom:'#3a180f', ground:['#331711','#120705'], road:['#3d1b12','#2a120b','#160806'], accent:'rgba(255,140,40,0.6)', farMtn:'rgba(48,22,16,0.88)', nearMtn:'rgba(58,28,20,0.92)', star:false },
-  { skyTop:'#160616', skyBottom:'#3a0a2c', ground:['#320a28','#0f0310'], road:['#3d0c30','#2a0821','#160411'], accent:'rgba(255,60,120,0.65)', farMtn:'rgba(50,10,38,0.88)', nearMtn:'rgba(62,14,46,0.92)', star:true },
+  { skyTop:'#141a3a', skyBottom:'#2d3868', ground:['#282e57','#0d0f1e'], road:['#363d6c','#282f52','#181a2e'], accent:'rgba(255,80,110,0.6)', glow:'rgba(120,90,255,0.20)', farMtn:'rgba(34,38,70,0.85)', nearMtn:'rgba(42,48,84,0.9)', star:true },
+  { skyTop:'#122048', skyBottom:'#2f5390', ground:['#25415f','#0a1420'], road:['#2f4d6c','#25405a','#12202f'], accent:'rgba(90,190,255,0.6)', glow:'rgba(60,180,255,0.20)', farMtn:'rgba(24,44,68,0.85)', nearMtn:'rgba(28,54,80,0.9)', star:true },
+  { skyTop:'#2c1650', skyBottom:'#54227c', ground:['#432461','#170a26'], road:['#522c6e','#3d215a','#1f1136'], accent:'rgba(220,110,255,0.6)', glow:'rgba(230,110,255,0.22)', farMtn:'rgba(48,24,64,0.85)', nearMtn:'rgba(58,30,76,0.9)', star:true },
+  { skyTop:'#452012', skyBottom:'#7a3212', ground:['#552b1c','#1e0d08'], road:['#63331f','#452213','#22100a'], accent:'rgba(255,165,60,0.65)', glow:'rgba(255,140,40,0.22)', farMtn:'rgba(60,28,20,0.88)', nearMtn:'rgba(72,34,24,0.92)', star:false },
+  { skyTop:'#331033', skyBottom:'#701962', ground:['#5a1746','#1c081e'], road:['#661a50','#4a133c','#240c22'], accent:'rgba(255,90,160,0.65)', glow:'rgba(255,70,150,0.24)', farMtn:'rgba(62,14,48,0.88)', nearMtn:'rgba(76,18,58,0.92)', star:true },
 ];
 function currentTheme(){ return STAGE_THEMES[clamp(stageIdx, 0, STAGE_THEMES.length-1)]; }
 
@@ -874,20 +893,32 @@ function pickGimmicks(){
 }
 
 function makeBladeEnemy(lenOverride){
-  const len = lenOverride || bladeLen();
   const spriteKey = pickSpriteKey();
   const sp = SPRITES[spriteKey];
-  let pattern, shapeName=null;
-  const shape = pickShapeFor(len);
-  if(shape){ shapeName = shape; pattern = SHAPE_COMBOS[shape].slice(); }
-  else {
+  let pattern=null, shapeName=null, len;
+  if(lenOverride){
+    // explicit length requested (test mode / boss-phase retry) — only use a
+    // shape if one exists at exactly that length, so the request is honored
+    len = lenOverride;
+    const shape = pickShapeFor(len);
+    if(shape){ shapeName = shape; pattern = SHAPE_COMBOS[shape].slice(); }
+  } else if(Math.random() < SHAPE_COMBO_CHANCE){
+    // normal stage play — roll for a shape combo independently of bladeLen(),
+    // so V/^/Z/⚡ show up in every stage instead of only ones whose length
+    // range happens to include 2 or 3
+    const shape = pick(Object.keys(SHAPE_COMBOS));
+    shapeName = shape; pattern = SHAPE_COMBOS[shape].slice(); len = pattern.length;
+  } else {
+    len = bladeLen();
+  }
+  if(!pattern){
     pattern = [];
     let prev=null;
     for(let i=0;i<len;i++){ const d=pickBladeStep(prev); pattern.push(d); prev=d; }
   }
   const gm = pickGimmicks();
   gm.reverse = false; // reverse is orb-only (see point 7); flicker stays blade-only by design
-  const tl = Math.max(BLADE_TIME_MIN, (BLADE_TIME_BASE + BLADE_TIME_PER_STEP*len) * difficultyFactor());
+  const tl = Math.max(BLADE_TIME_MIN, (BLADE_TIME_BASE + BLADE_TIME_PER_STEP*len) * difficultyFactor() + (shapeName?SHAPE_COMBO_TIME_BONUS:0));
   return Object.assign(baseRuntime(), {
     typeKey:'blade', spriteKey, name: shapeName? `${sp.kor} (${shapeName})` : sp.kor, color:sp.color, pattern, shapeName,
     timeLimit:tl, timer:tl, dmg: 8+len*2, scoreVal: 90+len*45,
@@ -1443,7 +1474,7 @@ function assignAllTapTargets(e){
   const areaY0 = topSafe, areaY1 = H*0.80;
   const areaW = areaX1-areaX0, areaH = areaY1-areaY0;
 
-  const radius = n<=4 ? TAP_TARGET_RADIUS : Math.max(38, TAP_TARGET_RADIUS - (n-4)*7);
+  const radius = n<=4 ? TAP_TARGET_RADIUS : Math.max(28, TAP_TARGET_RADIUS - (n-4)*6);
   e.tapRadius = radius;
   const minGap = radius*2 + 12; // required center-to-center distance
 
@@ -2028,6 +2059,18 @@ function drawBackground(){
   ctx.fillStyle=sky; ctx.fillRect(0,0,W,horizonY);
 
   if(theme.star) drawStars(horizonY);
+
+  // soft colored nebula wash — the biggest single fix for the sky feeling
+  // flat/monotonous, since it's a strong per-stage color cue even before
+  // you consciously notice the sky/ground palette shifted
+  ctx.save();
+  const neb = ctx.createRadialGradient(W*0.7, horizonY*0.25, 10, W*0.7, horizonY*0.25, W*0.75);
+  neb.addColorStop(0, theme.glow);
+  neb.addColorStop(1, 'rgba(0,0,0,0)');
+  ctx.fillStyle = neb;
+  ctx.fillRect(0,0,W,horizonY);
+  ctx.restore();
+
   drawClouds(horizonY);
 
   // ambient wind streaks — always animating a little so the world never feels static
@@ -2286,38 +2329,49 @@ function drawPatternUI(e){
   } else if(e.shapeName){
     // Shape-combo pattern (V/^/Z/⚡) — the whole thing is meant to be drawn
     // as one continuous stroke (see strokeMode in the pointer handlers), so
-    // it's shown as a single, simple symbol rather than a row of per-step
-    // arrow icons or a traced path.
-    const iconSize = clamp(W*0.28, 90, 150);
-    const glyphY = anchorY + iconSize*0.46;
+    // it's shown as a single symbol, but styled as the same circular badge
+    // (ring + radial glow) used for the regular per-step direction icons —
+    // just one badge instead of a row of them.
+    const iconSize = clamp(W*0.30, 100, 150);
+    const badgeY = anchorY + iconSize*0.56;
     const done = e.stepIndex>=e.pattern.length;
-    const symColor = done ? '#39d98a' : '#fff6cf';
+    const baseColor = SHAPE_COLORS[e.shapeName] || '#f0c419';
+    const ringColor = done ? '#39d98a' : baseColor;
 
     ctx.save();
     ctx.globalAlpha = hidden? 0 : 0.85;
     ctx.fillStyle = '#fff6cf';
     ctx.font = "700 14px Rajdhani, sans-serif";
     ctx.textAlign='center';
-    ctx.fillText(e.shapeName+' 모양 · 한 번에 이어 그리기!', cx, anchorY - 4);
+    ctx.fillText('한 번에 이어 그리기!', cx, anchorY - 4);
     ctx.restore();
 
     ctx.save();
     ctx.globalAlpha = hidden? 0 : 1;
     const pop = patternPopT<1 ? (1-patternPopT)*0.5 : 0;
-    const pulse = 1 + Math.sin(now()/1000*6)*0.04 + pop;
-    ctx.translate(cx, glyphY);
+    const pulse = 1 + Math.sin(now()/1000*6)*0.05 + pop;
+    ctx.translate(cx, badgeY);
     ctx.scale(pulse, pulse);
-    ctx.fillStyle = symColor;
-    ctx.font = `900 ${iconSize}px Rajdhani, sans-serif`;
+
+    const g = ctx.createRadialGradient(0,0,6,0,0,iconSize*0.62);
+    g.addColorStop(0, ringColor+'55'); g.addColorStop(1, ringColor+'00');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0,0,iconSize*0.62,0,Math.PI*2); ctx.fill();
+
+    ctx.strokeStyle = ringColor;
+    ctx.lineWidth = 4;
+    ctx.beginPath(); ctx.arc(0,0,iconSize*0.46,0,Math.PI*2); ctx.stroke();
+
+    ctx.fillStyle = '#fff';
+    ctx.font = `900 ${iconSize*0.5}px Rajdhani, sans-serif`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.shadowColor = symColor;
-    ctx.shadowBlur = 26;
-    ctx.fillText(e.shapeName, 0, iconSize*0.05);
+    ctx.shadowColor = ringColor;
+    ctx.shadowBlur = 24;
+    ctx.fillText(e.shapeName, 0, iconSize*0.03);
     ctx.shadowBlur = 0;
     ctx.restore();
 
-    barY = glyphY + iconSize*0.42 + 26;
+    barY = badgeY + iconSize*0.62 + 22;
   } else {
     // Whole sequence shown at once in a row (rather than revealing one step
     // at a time) so a 2+ step pattern can be read and planned in advance.
@@ -2408,12 +2462,13 @@ function drawOrbTargets(e){
     ctx.globalAlpha = hidden ? 0.10 : 1;
     ctx.translate(t.x,t.y);
     ctx.scale(pulse,pulse);
-    ctx.strokeStyle = isNext? '#f0c419' : '#63b3ff';
+    const style = ORB_NUM_STYLES[(t.num-1) % ORB_NUM_STYLES.length];
+    ctx.strokeStyle = isNext? '#f0c419' : style.stroke;
     ctx.lineWidth = isNext?5:3;
     if(isNext){ ctx.shadowColor='rgba(240,196,25,0.9)'; ctx.shadowBlur=20; }
     ctx.beginPath(); ctx.arc(0,0,radius,0,Math.PI*2); ctx.stroke();
     ctx.shadowBlur=0;
-    ctx.fillStyle = isNext? 'rgba(240,196,25,0.22)' : 'rgba(99,179,255,0.16)';
+    ctx.fillStyle = isNext? 'rgba(240,196,25,0.22)' : style.fill;
     ctx.beginPath(); ctx.arc(0,0,radius*0.82,0,Math.PI*2); ctx.fill();
     ctx.fillStyle = isNext? '#fff6cf' : '#fff';
     ctx.font = `900 ${radius*0.8}px Rajdhani, sans-serif`;
@@ -2487,65 +2542,111 @@ function drawTrail(){
   ctx.save(); ctx.lineCap='round'; ctx.lineJoin='round';
 
   if(style==='blade'){
-    // real-steel slash: soft colored glow underneath a crisp white-hot core
+    // razor-thin katana slash: a slim colored glow edge either side of a
+    // near-white hairline core, plus a faint offset "afterimage" pass —
+    // deliberately much THINNER than classic so it reads as a cut, not a paint stroke
+    for(let off=-1; off<=1; off+=2){
+      for(let i=1;i<pts.length;i++){
+        const a = i/pts.length;
+        ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.5})`;
+        ctx.lineWidth = 2.2;
+        ctx.beginPath();
+        ctx.moveTo(pts[i-1].x+off*2, pts[i-1].y); ctx.lineTo(pts[i].x+off*2, pts[i].y);
+        ctx.stroke();
+      }
+    }
+    ctx.shadowColor = `rgba(${r},${g},${b},0.95)`; ctx.shadowBlur = 20;
     for(let i=1;i<pts.length;i++){
       const a = i/pts.length;
-      ctx.shadowColor = `rgba(${r},${g},${b},0.85)`; ctx.shadowBlur = 16;
-      ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.55})`;
-      ctx.lineWidth = 9+a*9;
+      ctx.strokeStyle = `rgba(255,255,255,${a*0.98})`;
+      ctx.lineWidth = 1+a*1.6;
       ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    // bright flash burst right at the leading edge (freshest point)
+    const tip = pts[pts.length-1];
+    const flashR = ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,26);
+    flashR.addColorStop(0,'rgba(255,255,255,0.9)');
+    flashR.addColorStop(0.4,`rgba(${r},${g},${b},0.55)`);
+    flashR.addColorStop(1,`rgba(${r},${g},${b},0)`);
+    ctx.fillStyle = flashR;
+    ctx.beginPath(); ctx.arc(tip.x,tip.y,26,0,Math.PI*2); ctx.fill();
+  } else if(style==='electric'){
+    // dense crackling bolt: thick glowing core with frequent jagged
+    // branches AND small floating spark particles along the whole path
+    for(let i=1;i<pts.length;i++){
+      const a = i/pts.length;
+      ctx.shadowColor = `rgba(${r},${g},${b},1)`; ctx.shadowBlur = 18;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.95})`;
+      ctx.lineWidth = 2.5+a*4.5;
+      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+      ctx.shadowBlur = 0;
+      ctx.strokeStyle = `rgba(255,255,255,${a*0.95})`;
+      ctx.lineWidth = 1+a*1.2;
+      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+
+      const dx=pts[i].x-pts[i-1].x, dy=pts[i].y-pts[i-1].y;
+      const len=Math.hypot(dx,dy)||1;
+      const nx=-dy/len, ny=dx/len;
+      // 1-2 jagged branches per segment, more frequent & longer than before
+      const branchCount = Math.random()<0.7 ? (Math.random()<0.3?2:1) : 0;
+      for(let bIdx=0; bIdx<branchCount; bIdx++){
+        const mx=pts[i-1].x+dx*Math.random(), my=pts[i-1].y+dy*Math.random();
+        const off=(Math.random()-0.5)*34;
+        const kx=mx+nx*off, ky=my+ny*off;
+        const midx=(mx+kx)/2+(Math.random()-0.5)*8, midy=(my+ky)/2+(Math.random()-0.5)*8;
+        ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.9})`;
+        ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(midx,midy); ctx.lineTo(kx,ky); ctx.stroke();
+      }
+      // little spark particles
+      if(Math.random()<0.5){
+        const sx = pts[i].x + (Math.random()-0.5)*20, sy = pts[i].y + (Math.random()-0.5)*20;
+        ctx.fillStyle = `rgba(255,255,255,${0.5+Math.random()*0.5})`;
+        ctx.beginPath(); ctx.arc(sx,sy, 1+Math.random()*1.6, 0, Math.PI*2); ctx.fill();
+      }
+    }
+  } else if(style==='energy'){
+    // big soft nebula-like aura: several wide, heavily-blurred offset
+    // ribbons layered together (reference: swirling translucent energy),
+    // plus a bright core and a few drifting glow particles
+    ctx.globalCompositeOperation = 'lighter';
+    for(let layer=4; layer>=0; layer--){
+      const spread = layer*5;
+      const wob = layer*2.2;
+      ctx.shadowColor = `rgba(${r},${g},${b},0.6)`; ctx.shadowBlur = 22;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${0.10})`;
+      ctx.lineWidth = 22+layer*7;
+      ctx.beginPath();
+      for(let i=0;i<pts.length;i++){
+        const w = Math.sin(i*0.7+layer)*wob;
+        const px = pts[i].x+spread+w, py = pts[i].y-spread+w;
+        if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+      }
+      ctx.stroke();
+      ctx.beginPath();
+      for(let i=0;i<pts.length;i++){
+        const w = Math.cos(i*0.7+layer)*wob;
+        const px = pts[i].x-spread+w, py = pts[i].y+spread+w;
+        if(i===0) ctx.moveTo(px,py); else ctx.lineTo(px,py);
+      }
+      ctx.stroke();
     }
     ctx.shadowBlur = 0;
     for(let i=1;i<pts.length;i++){
       const a = i/pts.length;
-      ctx.strokeStyle = `rgba(255,255,255,${a*0.95})`;
-      ctx.lineWidth = 1.4+a*2.2;
+      ctx.strokeStyle = `rgba(255,255,255,${a*0.75})`;
+      ctx.lineWidth = 2.5+a*3;
       ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
     }
-  } else if(style==='electric'){
-    // main line plus jagged little sparks branching off perpendicular to it
-    for(let i=1;i<pts.length;i++){
-      const a = i/pts.length;
-      ctx.shadowColor = `rgba(${r},${g},${b},0.9)`; ctx.shadowBlur = 10;
-      ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.9})`;
-      ctx.lineWidth = 2+a*3.5;
-      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
-      ctx.shadowBlur = 0;
-      if(Math.random()<0.55){
-        const mx=(pts[i-1].x+pts[i].x)/2, my=(pts[i-1].y+pts[i].y)/2;
-        const dx=pts[i].x-pts[i-1].x, dy=pts[i].y-pts[i-1].y;
-        const len=Math.hypot(dx,dy)||1;
-        const nx=-dy/len, ny=dx/len;
-        const off=(Math.random()-0.5)*22;
-        const kx=mx+nx*off, ky=my+ny*off;
-        ctx.strokeStyle = `rgba(255,255,255,${a*0.85})`;
-        ctx.lineWidth = 1.3;
-        ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(kx,ky); ctx.stroke();
-      }
-    }
-  } else if(style==='energy'){
-    // layered translucent glow ribbons (soft aura, several offset passes)
-    for(let layer=2; layer>=0; layer--){
-      const spread = layer*3.5;
-      for(let i=1;i<pts.length;i++){
-        const a = i/pts.length;
-        ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.16})`;
-        ctx.lineWidth = 16+a*18 - layer*3;
-        ctx.beginPath();
-        ctx.moveTo(pts[i-1].x+spread, pts[i-1].y-spread);
-        ctx.lineTo(pts[i].x+spread, pts[i].y-spread);
-        ctx.stroke();
-        ctx.beginPath();
-        ctx.moveTo(pts[i-1].x-spread, pts[i-1].y+spread);
-        ctx.lineTo(pts[i].x-spread, pts[i].y+spread);
-        ctx.stroke();
-      }
-    }
-    for(let i=1;i<pts.length;i++){
-      const a = i/pts.length;
-      ctx.strokeStyle = `rgba(255,255,255,${a*0.55})`;
-      ctx.lineWidth = 2+a*2.5;
-      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+    ctx.globalCompositeOperation = 'source-over';
+    // a couple of soft drifting glow motes for extra sparkle
+    for(let k=0;k<3;k++){
+      const p = pts[Math.floor(Math.random()*pts.length)];
+      const mx = p.x+(Math.random()-0.5)*30, my = p.y+(Math.random()-0.5)*30;
+      const g2 = ctx.createRadialGradient(mx,my,0,mx,my,10);
+      g2.addColorStop(0, `rgba(${r},${g},${b},0.5)`); g2.addColorStop(1, `rgba(${r},${g},${b},0)`);
+      ctx.fillStyle=g2; ctx.beginPath(); ctx.arc(mx,my,10,0,Math.PI*2); ctx.fill();
     }
   } else {
     // classic — simple width-tapered stroke
