@@ -180,6 +180,8 @@
     <div class="swatch-row" id="trailColorRow"></div>
     <div class="section-label">스타일</div>
     <div class="style-grid" id="trailStyleRow"></div>
+    <div class="section-label">잔상</div>
+    <button class="style-btn" id="afterimageToggleBtn" style="width:100%; margin-top:8px;">잔상 남기기</button>
     <button class="btn secondary" id="trailBackBtn" style="margin-top:14px;">뒤로</button>
   </div>
 </div>
@@ -344,24 +346,183 @@ const SHAPE_COLORS = { 'V':'#63b3ff', '^':'#ff9f4a', 'Z':'#c9a0ff', '⚡':'#f0c4
 // visual weight as everything else instead of looking like mismatched
 // letters/emoji — size is the icon's roughly-diameter in px, centered at
 // the current transform origin.
+const SHAPE_POINTS = {
+  'V':  [[-0.40,-0.30],[0,0.38],[0.40,-0.30]],
+  '^':  [[-0.40,0.30],[0,-0.38],[0.40,0.30]],
+  'Z':  [[-0.36,-0.32],[0.36,-0.32],[-0.36,0.32],[0.36,0.32]],
+  '⚡': [[0.20,-0.42],[-0.16,-0.02],[0.14,-0.02],[-0.20,0.42]]
+};
+
+// ---- Whole-path shape recognizer (V/^/Z/⚡) ----------------------------
+// Instead of policing each straight-line segment as it's drawn (fragile:
+// real fingers round corners, vary speed/size, so a single mis-bucketed
+// sample could fail the whole thing), this compares the ENTIRE drawn path
+// against a template as one shape — the same general approach behind
+// Google's "Magic Cat Academy" and the classic $1 Unistroke Recognizer.
+// You just draw the whole symbol freely; it's graded once, at release.
+const RECOGNIZER_N = 32;        // resample point count
+// Per-shape accept threshold on normalized avg point distance. A single
+// shared threshold used to be applied to all four shapes, but V/^ (one
+// corner) and Z/⚡ (two corners) are NOT equally hard to land: the same
+// natural hand variation (slightly uneven leg lengths, rounded corners)
+// produces a much bigger distance score for Z/⚡ than for V/^, so the old
+// single 0.32 threshold was simultaneously too strict for Z (rejecting
+// perfectly good Z swipes) and — because ⚡'s overall start->end direction
+// happens to be close to a straight line — too loose for ⚡ (a plain
+// diagonal could sneak under 0.32). Z/⚡ get a more generous distance
+// threshold here; the CHORD_MIN_DEVIATION check below is what actually
+// guards against "just draw a diagonal" for all four shapes.
+const RECOGNIZER_MAX_DIST = { 'V':0.32, '^':0.32, 'Z':0.40, '⚡':0.36 };
+function recognizerMaxDist(shapeName){
+  return (shapeName in RECOGNIZER_MAX_DIST) ? RECOGNIZER_MAX_DIST[shapeName] : 0.32;
+}
+// Minimum required perpendicular deviation (normalized) of the drawn path
+// from the straight line connecting its start and end points. A shape that
+// never bends away from its own start->end chord is — by definition — just
+// a straight swipe wearing a shape's name, regardless of how generous the
+// distance threshold above is. This is what makes "draw the general
+// direction" no longer good enough: the path has to actually visit a
+// vertex off to the side, which is the whole point of V/^/Z/⚡.
+const CHORD_MIN_DEVIATION = 0.08;
+
+function resamplePath(points, n){
+  let pathLen = 0;
+  for(let i=1;i<points.length;i++) pathLen += Math.hypot(points[i].x-points[i-1].x, points[i].y-points[i-1].y);
+  if(pathLen < 1) return null;
+  const interval = pathLen/(n-1);
+  let D = 0;
+  const pts = points.map(p=>({x:p.x,y:p.y}));
+  const out = [pts[0]];
+  let guard = 0;
+  for(let i=1;i<pts.length;){
+    if(++guard > 5000) break; // safety net — should never trigger, but never hang the tab if it would
+    const d = Math.hypot(pts[i].x-pts[i-1].x, pts[i].y-pts[i-1].y);
+    if(d<=0){ i++; continue; }
+    if(D+d >= interval){
+      const t = (interval-D)/d;
+      const q = { x: pts[i-1].x+t*(pts[i].x-pts[i-1].x), y: pts[i-1].y+t*(pts[i].y-pts[i-1].y) };
+      out.push(q);
+      pts.splice(i,0,q);
+      D = 0;
+      i++;
+    } else {
+      D += d; i++;
+    }
+  }
+  while(out.length < n) out.push(pts[pts.length-1]);
+  return out.slice(0,n);
+}
+function normalizePath(points){
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  points.forEach(p=>{ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y); });
+  const w = Math.max(maxX-minX, 0.01), h = Math.max(maxY-minY, 0.01);
+  const s = Math.max(w,h); // preserve aspect ratio — a V shouldn't match if drawn squashed into a different shape
+  const scaled = points.map(p=>({ x:(p.x-minX)/s, y:(p.y-minY)/s }));
+  let cx=0,cy=0;
+  scaled.forEach(p=>{cx+=p.x;cy+=p.y;});
+  cx/=scaled.length; cy/=scaled.length;
+  return scaled.map(p=>({x:p.x-cx, y:p.y-cy}));
+}
+function pathAvgDistance(a, b){
+  let d=0;
+  for(let i=0;i<a.length;i++) d += Math.hypot(a[i].x-b[i].x, a[i].y-b[i].y);
+  return d/a.length;
+}
+const SHAPE_TEMPLATES = {};
+function buildShapeTemplates(){
+  Object.keys(SHAPE_POINTS).forEach(name=>{
+    const raw = SHAPE_POINTS[name];
+    const dense = [];
+    for(let i=0;i<raw.length;i++){
+      const [x,y] = raw[i];
+      if(i===0){ dense.push({x,y}); continue; }
+      const [px,py] = raw[i-1];
+      for(let s=1;s<=24;s++) dense.push({x:px+(x-px)*s/24, y:py+(y-py)*s/24});
+    }
+    SHAPE_TEMPLATES[name] = normalizePath(resamplePath(dense, RECOGNIZER_N));
+  });
+}
+buildShapeTemplates();
+// Returns the normalized average point distance between the drawn path and
+// the given shape's template (lower = better match; compare to RECOGNIZER_MAX_DIST).
+function scoreShapeMatch(rawPoints, shapeName){
+  const template = SHAPE_TEMPLATES[shapeName];
+  if(!template || rawPoints.length<2) return Infinity;
+  const resampled = resamplePath(rawPoints, RECOGNIZER_N);
+  if(!resampled) return Infinity;
+  const normalized = normalizePath(resampled);
+  return pathAvgDistance(normalized, template);
+}
+// How far the drawn path bows away from its own straight start->end line,
+// normalized the same way as the template match above (0 = dead-straight
+// swipe, larger = it genuinely visited a vertex off to the side).
+function chordDeviation(rawPoints){
+  const resampled = resamplePath(rawPoints, RECOGNIZER_N);
+  if(!resampled) return 0;
+  const normalized = normalizePath(resampled);
+  const p0 = normalized[0], p1 = normalized[normalized.length-1];
+  const dx = p1.x-p0.x, dy = p1.y-p0.y;
+  const L = Math.hypot(dx,dy);
+  let maxd = 0;
+  if(L < 1e-6){
+    normalized.forEach(p=>{ maxd = Math.max(maxd, Math.hypot(p.x-p0.x, p.y-p0.y)); });
+  } else {
+    normalized.forEach(p=>{
+      const d = Math.abs((p.x-p0.x)*dy - (p.y-p0.y)*dx) / L;
+      maxd = Math.max(maxd, d);
+    });
+  }
+  return maxd;
+}
+// Single source of truth for "does this drawn stroke count as shapeName?" —
+// both the distance-to-template score (per-shape threshold) AND the
+// chord-deviation check (must actually bend, not just point roughly the
+// right way) have to pass. Returns {dist, bend, pass} so callers can show
+// both numbers in debug/test views.
+function evalShapeMatch(rawPoints, shapeName){
+  const dist = scoreShapeMatch(rawPoints, shapeName);
+  const bend = chordDeviation(rawPoints);
+  const pass = dist <= recognizerMaxDist(shapeName) && bend >= CHORD_MIN_DEVIATION;
+  return { dist, bend, pass };
+}
+
+// Draws the shape AND makes the stroke order unambiguous: a pulsing dot at
+// the exact starting point, and a small arrowhead at the end of each leg —
+// otherwise a static "Z" glyph gives no clue that you're meant to start at
+// the top-LEFT and trace right→down-left→right, not some other corner.
 function drawShapeVectorIcon(shapeName, size, color){
+  const raw = SHAPE_POINTS[shapeName];
+  if(!raw) return;
+  const pts = raw.map(([x,y])=>({x:x*size, y:y*size}));
   ctx.save();
   ctx.strokeStyle = color;
   ctx.lineWidth = size*0.16;
   ctx.lineCap = 'round';
   ctx.lineJoin = 'round';
   ctx.beginPath();
-  if(shapeName==='V'){
-    ctx.moveTo(-0.40*size,-0.30*size); ctx.lineTo(0,0.38*size); ctx.lineTo(0.40*size,-0.30*size);
-  } else if(shapeName==='^'){
-    ctx.moveTo(-0.40*size,0.30*size); ctx.lineTo(0,-0.38*size); ctx.lineTo(0.40*size,0.30*size);
-  } else if(shapeName==='Z'){
-    ctx.moveTo(-0.36*size,-0.32*size); ctx.lineTo(0.36*size,-0.32*size);
-    ctx.lineTo(-0.36*size,0.32*size); ctx.lineTo(0.36*size,0.32*size);
-  } else if(shapeName==='⚡'){
-    ctx.moveTo(0.20*size,-0.42*size); ctx.lineTo(-0.16*size,-0.02*size); ctx.lineTo(0.14*size,-0.02*size); ctx.lineTo(-0.20*size,0.42*size);
-  }
+  ctx.moveTo(pts[0].x, pts[0].y);
+  for(let i=1;i<pts.length;i++) ctx.lineTo(pts[i].x, pts[i].y);
   ctx.stroke();
+
+  // arrowhead at the end of each leg, showing travel direction
+  ctx.fillStyle = color;
+  for(let i=1;i<pts.length;i++){
+    const p0=pts[i-1], p1=pts[i];
+    const ang = Math.atan2(p1.y-p0.y, p1.x-p0.x);
+    const ah = size*0.13;
+    ctx.beginPath();
+    ctx.moveTo(p1.x, p1.y);
+    ctx.lineTo(p1.x - Math.cos(ang-0.5)*ah, p1.y - Math.sin(ang-0.5)*ah);
+    ctx.lineTo(p1.x - Math.cos(ang+0.5)*ah, p1.y - Math.sin(ang+0.5)*ah);
+    ctx.closePath();
+    ctx.fill();
+  }
+  // pulsing "start here" dot at the very first point
+  const pulse = 1 + Math.sin(now()/1000*5)*0.25;
+  ctx.fillStyle = '#fff';
+  ctx.shadowColor = color; ctx.shadowBlur = size*0.3;
+  ctx.beginPath(); ctx.arc(pts[0].x, pts[0].y, size*0.1*pulse, 0, Math.PI*2); ctx.fill();
+  ctx.shadowBlur = 0;
   ctx.restore();
 }
 
@@ -379,7 +540,6 @@ const ORB_NUM_STYLES = [
   {stroke:'#ff9f4a', fill:'rgba(255,159,74,0.16)'}
 ];
 const SWIPE_MIN_DIST = 22;
-const STROKE_SEGMENT_CONFIRM_DIST = 42; // see pointerMove's strokeMode handling
 const EARLY_SAMPLE_DIST = 14;
 const REVERSAL_REJECT_STEPS = 3;
 
@@ -408,7 +568,11 @@ const ORB_TIME_MIN = 0.95;
 // just ones whose bladeLevels happen to include a 2- or 3-step pattern), and
 // given extra time since drawing the whole shape in one stroke takes longer
 // than an equivalent number of separate swipes.
-const SHAPE_COMBO_CHANCE = 0.32;
+// Calibrated so shapes show up in ~30% of ALL enemies (not just blade-type
+// ones) — since only ~68% of enemies are blade-type at all (see pickKind's
+// orb/blade split), the per-blade-pattern roll needs to run higher than 30%
+// to land on a 70/30 arrow/shape split across the whole run.
+const SHAPE_COMBO_CHANCE = 0.44;
 const SHAPE_COMBO_TIME_BONUS = 1.1;
 // isFlickerHidden's memorize-then-hide cycle needs ~1.6-2.3s before the
 // FIRST hide even happens (see initialShow there) — without this bonus, the
@@ -542,10 +706,11 @@ const TRAIL_COLORS = {
 const TRAIL_STYLES = {
   classic:  { label:'클래식' },       // simple width-tapered stroke (current default)
   blade:    { label:'칼날 베기' },    // crisp white-hot core + colored glow, like real steel
-  electric: { label:'전격' },         // jagged sparking branches off the main line
-  energy:   { label:'에너지 오라' }   // soft layered translucent glow ribbons
+  electric: { label:'전격' },         // jagged sparking branches + scattered crackle particles
+  neon:     { label:'네온' },         // dual-color edge-lit tube glow, pulsing outer halo
+  comet:    { label:'혜성' }          // bright comet head with a streaming dust tail
 };
-let trailSettings = { color:'crimson', style:'classic' };
+let trailSettings = { color:'crimson', style:'classic', afterimage:false };
 try{
   const saved = JSON.parse(localStorage.getItem('bladerush_trail')||'null');
   if(saved && TRAIL_COLORS[saved.color] && TRAIL_STYLES[saved.style]) trailSettings = saved;
@@ -1262,6 +1427,12 @@ function buildTrailSettingsUI(){
     });
     styleRow.appendChild(el);
   });
+  const aiBtn = document.getElementById('afterimageToggleBtn');
+  aiBtn.className = 'style-btn' + (trailSettings.afterimage ? ' selected' : '');
+  aiBtn.textContent = trailSettings.afterimage ? '잔상 남기기: ON' : '잔상 남기기: OFF';
+  aiBtn.onclick = ()=>{
+    trailSettings.afterimage = !trailSettings.afterimage; saveTrailSettings(); buildTrailSettingsUI();
+  };
 }
 function openTrailSettings(fromScreenId){
   trailSettingsReturnScreen = fromScreenId;
@@ -1954,35 +2125,25 @@ function failEnemy(){
 // be drawn as ONE continuous stroke instead of separate release-then-resw type
 // swipes per step, à la Google's Magic Cat Academy. We reuse the same 8-way
 // direction bucketing as a normal single swipe (getGestureDirection), just
-// applied repeatedly: every time the drag's direction bucket changes from a
-// "checkpoint" point, that's a completed segment, so we resolve it through
-// the exact same onGestureInput()/advanceStep()/wrongAttemptRetry() path a
-// discrete swipe would use, then start a fresh checkpoint from there. Random
-// (non-shape) blade patterns are untouched and keep the old one-swipe-per-step
-// flow, since their whole point is a discrete beat per step.
+// Shape-combo blade patterns (V/^/Z/⚡ — anything with e.shapeName set) are
+// drawn as ONE continuous stroke and graded as a WHOLE SHAPE at release
+// (see scoreShapeMatch above), not policed segment-by-segment while
+// drawing — this is far more forgiving of natural human variation
+// (rounded corners, size, speed) than trying to detect each straight-line
+// leg's direction individually. Random (non-shape) blade patterns are
+// untouched and keep the old one-swipe-per-step flow.
 let strokeMode = false;
-let strokeCheckX = 0, strokeCheckY = 0;
-let strokeSegDir = null;
+let shapeStrokePoints = [];
 
 function strokeModeActive(){
   return !!(activeEnemy && activeEnemy.phase==='active' && activeEnemy.typeKey==='blade' && activeEnemy.shapeName);
-}
-
-// Resolves one completed segment of an in-progress stroke through the normal
-// gesture-input path. No early-flick/reversal anti-cheat here — that check
-// is meant for a single discrete swipe's start vs release direction, and
-// doesn't translate to a multi-segment continuous stroke.
-function resolveStrokeSegment(dir){
-  if(!strokeModeActive()){ strokeMode = false; return; }
-  onGestureInput(dir, {x:strokeCheckX, y:strokeCheckY});
-  if(!strokeModeActive()) strokeMode = false; // enemy cleared or swapped mid-stroke
 }
 
 function pointerDown(x,y){
   if(gameState!=='playing' && gameState!=='testing') return;
   pointerActive=true; startX=x; startY=y; startT=now(); trail=[{x,y,t:startT}]; earlyDir=null;
   strokeMode = strokeModeActive();
-  strokeCheckX = x; strokeCheckY = y; strokeSegDir = null;
+  shapeStrokePoints = strokeMode ? [{x,y}] : [];
   if(activeEnemy && activeEnemy.phase==='active' && activeEnemy.typeKey==='blade'){
     startSwingSound();
   }
@@ -1997,27 +2158,8 @@ function pointerMove(x,y){
   if(swingSoundNode) updateSwingSound(Math.hypot(x-startX,y-startY));
 
   if(strokeMode){
-    if(!strokeModeActive()){ strokeMode=false; }
-    else{
-      const dx=x-strokeCheckX, dy=y-strokeCheckY, dist=Math.hypot(dx,dy);
-      if(strokeSegDir===null){
-        // don't lock in a new segment's direction on the very first sample
-        // past SWIPE_MIN_DIST — right after a sharp corner (e.g. the ⚡
-        // pattern's left-right-left zigzag) a real finger rounds the turn a
-        // little, so the first few px can still point toward the bucket you
-        // just left. Waiting for a bit more travel lets it settle first.
-        if(dist>=STROKE_SEGMENT_CONFIRM_DIST) strokeSegDir = getGestureDirection(dx,dy,dist);
-      } else if(dist>=SWIPE_MIN_DIST){
-        const bucket = getGestureDirection(dx,dy,dist);
-        if(bucket!==strokeSegDir){
-          // direction turned enough to count as a new segment — resolve the
-          // one that just finished, then start tracking the next from here
-          const finishedDir = strokeSegDir;
-          strokeCheckX = x; strokeCheckY = y; strokeSegDir = null;
-          resolveStrokeSegment(finishedDir);
-        }
-      }
-    }
+    if(!strokeModeActive()) strokeMode=false;
+    else shapeStrokePoints.push({x,y});
   }
 }
 function pointerUp(x,y){
@@ -2033,16 +2175,17 @@ function pointerUp(x,y){
     return;
   }
 
-  // finalize whatever's pending: for a single-stroke shape combo that's the
-  // segment since the last mid-drag checkpoint, otherwise it's the whole
-  // swipe since touch-down (the original, unchanged behaviour)
-  const originX = strokeMode ? strokeCheckX : startX;
-  const originY = strokeMode ? strokeCheckY : startY;
-  const dx=x-originX, dy=y-originY, dist=Math.hypot(dx,dy);
+  if(strokeMode){
+    shapeStrokePoints.push({x,y});
+    resolveShapeStroke();
+    return;
+  }
+
+  const dx=x-startX, dy=y-startY, dist=Math.hypot(dx,dy);
   const dir = classifyGesture(trail, dx, dy, dist);
 
   let diff=null, invalid=false;
-  if(!strokeMode && dir!=='tap' && earlyDir && earlyDir!=='tap'){
+  if(dir!=='tap' && earlyDir && earlyDir!=='tap'){
     diff = circularDiff(dirIndex(earlyDir), dirIndex(dir));
     if(diff>=REVERSAL_REJECT_STEPS) invalid = true;
   }
@@ -2056,6 +2199,26 @@ function pointerUp(x,y){
 
   if(invalid){ onGestureInput('__invalid__', lastTapPos); return; }
   onGestureInput(dir, lastTapPos);
+}
+
+// Grades the whole just-finished stroke against the active enemy's expected
+// shape in one shot. Below-threshold match completes the ENTIRE pattern at
+// once (jumps stepIndex straight to the end); otherwise it's a WRONG, same
+// as mismatching a step in the old per-segment system.
+function resolveShapeStroke(){
+  if(!strokeModeActive()){ strokeMode=false; return; }
+  const e = activeEnemy;
+  const { dist, bend, pass } = evalShapeMatch(shapeStrokePoints, e.shapeName);
+  if(testState.active){
+    testState.lastDebug = { expected: e.shapeName, dir: 'd '+dist.toFixed(3)+' / bend '+bend.toFixed(3), earlyDir:null, diff:null,
+      result: pass ? 'MATCH' : 'MISMATCH' };
+  }
+  if(pass){
+    e.stepIndex = e.pattern.length;
+    succeedEnemy();
+  } else {
+    wrongAttemptRetry();
+  }
 }
 canvas.addEventListener('pointerdown', e=>{ e.preventDefault(); pointerDown(e.clientX,e.clientY); }, {passive:false});
 canvas.addEventListener('pointermove', e=>{ if(pointerActive){ e.preventDefault(); pointerMove(e.clientX,e.clientY);} }, {passive:false});
@@ -2453,14 +2616,6 @@ function drawPatternUI(e){
     const ringColor = done ? '#39d98a' : baseColor;
 
     ctx.save();
-    ctx.globalAlpha = hidden? 0 : 0.85;
-    ctx.fillStyle = '#fff6cf';
-    ctx.font = "700 14px Rajdhani, sans-serif";
-    ctx.textAlign='center';
-    ctx.fillText('한 번에 이어 그리기!', cx, anchorY - 4);
-    ctx.restore();
-
-    ctx.save();
     ctx.globalAlpha = hidden? 0 : 1;
     const pop = patternPopT<1 ? (1-patternPopT)*0.5 : 0;
     const pulse = 1 + Math.sin(now()/1000*6)*0.05 + pop;
@@ -2643,52 +2798,28 @@ function drawQueuedPreview(){
   });
 }
 
-// Test-mode-only debug overlay: shows exactly where the strokeMode segment
-// detector thinks the "checkpoint" is right now, the confirm-distance ring
-// (how far you need to travel before a new segment's direction locks in),
-// and the 8 bucket wedge boundaries radiating out from it — so you can see
-// in real time why a segment did or didn't register as the direction you meant.
+// Test-mode-only debug overlay: traces the raw path being captured for the
+// current stroke, and shows a live "match score" against the expected shape
+// (updated in real time as you draw) so you can see whether what you're
+// drawing is tracking toward a match before you even release.
 function drawStrokeRecognitionDebug(){
-  if(!strokeMode || !pointerActive) return;
+  if(!strokeMode || !pointerActive || shapeStrokePoints.length<2) return;
   ctx.save();
-  ctx.translate(strokeCheckX, strokeCheckY);
-  ctx.globalAlpha = 0.8;
-  // confirm-distance ring — a new segment's direction locks in once you
-  // cross this radius from the checkpoint
-  ctx.strokeStyle = 'rgba(255,246,207,0.55)';
-  ctx.lineWidth = 1.5;
-  ctx.setLineDash([4,4]);
-  ctx.beginPath(); ctx.arc(0,0,STROKE_SEGMENT_CONFIRM_DIST,0,Math.PI*2); ctx.stroke();
-  ctx.setLineDash([]);
-  // min-distance ring — smaller, the floor for detecting ANY movement at all
-  ctx.strokeStyle = 'rgba(255,246,207,0.25)';
-  ctx.beginPath(); ctx.arc(0,0,SWIPE_MIN_DIST,0,Math.PI*2); ctx.stroke();
-  // 8 wedge boundary lines (between adjacent direction buckets, offset 22.5°
-  // from each bucket's own center angle)
-  ctx.strokeStyle = 'rgba(255,246,207,0.22)';
-  ctx.lineWidth = 1;
-  for(let i=0;i<8;i++){
-    const a = (i*45 - 22.5) * Math.PI/180;
-    ctx.beginPath();
-    ctx.moveTo(0,0);
-    ctx.lineTo(Math.cos(a)*STROKE_SEGMENT_CONFIRM_DIST*1.4, Math.sin(a)*STROKE_SEGMENT_CONFIRM_DIST*1.4);
-    ctx.stroke();
-  }
-  // checkpoint marker itself
-  ctx.fillStyle = '#fff6cf';
-  ctx.beginPath(); ctx.arc(0,0,4,0,Math.PI*2); ctx.fill();
-  // if a direction is already locked for this segment, highlight that wedge
-  if(strokeSegDir){
-    const idx = DIR_ORDER.indexOf(strokeSegDir);
-    if(idx>=0){
-      const a = idx*45*Math.PI/180;
-      ctx.strokeStyle = SHAPE_COLORS[activeEnemy&&activeEnemy.shapeName] || '#39d98a';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.moveTo(0,0);
-      ctx.lineTo(Math.cos(a)*STROKE_SEGMENT_CONFIRM_DIST*1.4, Math.sin(a)*STROKE_SEGMENT_CONFIRM_DIST*1.4);
-      ctx.stroke();
-    }
+  ctx.strokeStyle = 'rgba(255,246,207,0.85)';
+  ctx.lineWidth = 2;
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.beginPath();
+  ctx.moveTo(shapeStrokePoints[0].x, shapeStrokePoints[0].y);
+  for(let i=1;i<shapeStrokePoints.length;i++) ctx.lineTo(shapeStrokePoints[i].x, shapeStrokePoints[i].y);
+  ctx.stroke();
+
+  if(activeEnemy && activeEnemy.shapeName){
+    const { dist, bend, pass } = evalShapeMatch(shapeStrokePoints, activeEnemy.shapeName);
+    const last = shapeStrokePoints[shapeStrokePoints.length-1];
+    ctx.fillStyle = pass ? '#39d98a' : '#ff6b81';
+    ctx.font = "700 13px Rajdhani, sans-serif";
+    ctx.textAlign = 'left';
+    ctx.fillText(`d ${dist.toFixed(2)}/${recognizerMaxDist(activeEnemy.shapeName)} · bend ${bend.toFixed(2)}/${CHORD_MIN_DEVIATION}`, last.x+12, last.y);
   }
   ctx.restore();
 }
@@ -2702,6 +2833,7 @@ function lerpRGB(c1, c2, t){
 }
 
 function drawTrail(){
+  drawTrailAfterimage();
   const cutoff = now()-160;
   const pts = trail.filter(p=>p.t>=cutoff);
   if(pts.length<2) return;
@@ -2709,137 +2841,234 @@ function drawTrail(){
   const c1 = theme.rgb, c2 = theme.rgb2 || theme.rgb;
   const style = trailSettings.style;
   ctx.save(); ctx.lineCap='round'; ctx.lineJoin='round';
+  drawStyledStroke(pts, style, c1, c2, {});
+  ctx.restore();
+}
+
+// Renders one style's stroke over the given points. Shared by the live
+// trail (drawTrail) and the afterimage echo (drawTrailAfterimage) below so
+// the afterimage always looks like a fainter, longer-lived version of
+// whichever style is actually selected, instead of one fixed generic look.
+//   alphaScale  - overall opacity multiplier
+//   widthScale  - overall line-width multiplier
+//   shadowScale - glow/shadowBlur multiplier
+//   ageAlphaFn  - optional fn(i) -> 0..1 extra per-point fade by age (afterimage only)
+//   includeExtras - electric branches/sparks, comet dust motes (off for afterimage: keeps it a clean echo)
+//   includeTip     - leading-edge flash/glow (off for afterimage: only the live stroke gets the flash)
+function drawStyledStroke(pts, style, c1, c2, opts){
+  const alphaScale = opts.alphaScale!=null ? opts.alphaScale : 1;
+  const widthScale = opts.widthScale!=null ? opts.widthScale : 1;
+  const shadowScale = opts.shadowScale!=null ? opts.shadowScale : 1;
+  const includeExtras = opts.includeExtras!=null ? opts.includeExtras : true;
+  const includeTip = opts.includeTip!=null ? opts.includeTip : true;
+  const ageAlphaFn = opts.ageAlphaFn || null;
 
   if(style==='blade'){
     // razor-thin katana slash: a slim colored glow edge either side of a
-    // near-white hairline core, plus a faint offset "afterimage" pass —
-    // deliberately much THINNER than classic so it reads as a cut, not a paint stroke
+    // near-white hairline core — deliberately much THINNER than the other
+    // styles so it reads as a cut, not a paint stroke (kept thin even when
+    // the other effects are thickened, and excluded from the thickness bump below)
     for(let off=-1; off<=1; off+=2){
       for(let i=1;i<pts.length;i++){
-        const a = i/pts.length;
-        const [r,g,b] = lerpRGB(c1,c2,a);
-        ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.5})`;
-        ctx.lineWidth = 2.2;
+        const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
+        const [r,g,b] = lerpRGB(c1,c2,posA);
+        ctx.strokeStyle = `rgba(${r},${g},${b},${posA*ageA*0.5*alphaScale})`;
+        ctx.lineWidth = 2.2*widthScale;
         ctx.beginPath();
         ctx.moveTo(pts[i-1].x+off*2, pts[i-1].y); ctx.lineTo(pts[i].x+off*2, pts[i].y);
         ctx.stroke();
       }
     }
     for(let i=1;i<pts.length;i++){
-      const a = i/pts.length;
-      const [r,g,b] = lerpRGB(c1,c2,a);
-      ctx.shadowColor = `rgba(${r},${g},${b},0.95)`; ctx.shadowBlur = 20;
-      ctx.strokeStyle = `rgba(255,255,255,${a*0.98})`;
-      ctx.lineWidth = 1+a*1.6;
+      const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
+      const [r,g,b] = lerpRGB(c1,c2,posA);
+      ctx.shadowColor = `rgba(${r},${g},${b},0.95)`; ctx.shadowBlur = 20*shadowScale;
+      ctx.strokeStyle = `rgba(255,255,255,${posA*ageA*0.98*alphaScale})`;
+      ctx.lineWidth = (1+posA*1.6)*widthScale;
       ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
     }
     ctx.shadowBlur = 0;
-    // bright flash burst right at the leading edge (freshest point)
-    const tip = pts[pts.length-1];
-    const [tr,tg,tb] = c2;
-    const flashR = ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,26);
-    flashR.addColorStop(0,'rgba(255,255,255,0.9)');
-    flashR.addColorStop(0.4,`rgba(${tr},${tg},${tb},0.55)`);
-    flashR.addColorStop(1,`rgba(${tr},${tg},${tb},0)`);
-    ctx.fillStyle = flashR;
-    ctx.beginPath(); ctx.arc(tip.x,tip.y,26,0,Math.PI*2); ctx.fill();
+    if(includeTip){
+      const tip = pts[pts.length-1];
+      const [tr,tg,tb] = c2;
+      const flashR = ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,26);
+      flashR.addColorStop(0,`rgba(255,255,255,${0.9*alphaScale})`);
+      flashR.addColorStop(0.4,`rgba(${tr},${tg},${tb},${0.55*alphaScale})`);
+      flashR.addColorStop(1,`rgba(${tr},${tg},${tb},0)`);
+      ctx.fillStyle = flashR;
+      ctx.beginPath(); ctx.arc(tip.x,tip.y,26,0,Math.PI*2); ctx.fill();
+    }
   } else if(style==='electric'){
     // dense crackling bolt: thick glowing core, frequent jagged branches,
     // AND a scattered halo of little sparks flying off around the whole
     // path (not just riding directly on the line) for a much busier,
-    // more electric feel.
+    // more electric feel. Thickened core vs. the old version so it stays
+    // readable next to the other effects.
     for(let i=1;i<pts.length;i++){
-      const a = i/pts.length;
-      const [r,g,b] = lerpRGB(c1,c2,a);
-      ctx.shadowColor = `rgba(${r},${g},${b},1)`; ctx.shadowBlur = 24;
-      ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.95})`;
-      ctx.lineWidth = 3+a*5.5;
+      const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
+      const a = posA*ageA;
+      const [r,g,b] = lerpRGB(c1,c2,posA);
+      ctx.shadowColor = `rgba(${r},${g},${b},1)`; ctx.shadowBlur = 24*shadowScale;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.95*alphaScale})`;
+      ctx.lineWidth = (4.5+posA*8)*widthScale;
       ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
       ctx.shadowBlur = 0;
-      ctx.strokeStyle = `rgba(255,255,255,${a*0.95})`;
-      ctx.lineWidth = 1+a*1.3;
+      ctx.strokeStyle = `rgba(255,255,255,${a*0.95*alphaScale})`;
+      ctx.lineWidth = (1.4+posA*1.8)*widthScale;
       ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
 
-      const dx=pts[i].x-pts[i-1].x, dy=pts[i].y-pts[i-1].y;
-      const len=Math.hypot(dx,dy)||1;
-      const nx=-dy/len, ny=dx/len;
-      // 1-3 jagged branches per segment — noticeably busier than before
-      const branchCount = Math.random()<0.85 ? (Math.random()<0.4?2:1)+(Math.random()<0.15?1:0) : 0;
-      for(let bIdx=0; bIdx<branchCount; bIdx++){
-        const mx=pts[i-1].x+dx*Math.random(), my=pts[i-1].y+dy*Math.random();
-        const off=(Math.random()-0.5)*46;
-        const kx=mx+nx*off, ky=my+ny*off;
-        const midx=(mx+kx)/2+(Math.random()-0.5)*10, midy=(my+ky)/2+(Math.random()-0.5)*10;
-        const [br,bg,bb] = lerpRGB(c1,c2,Math.random());
-        ctx.strokeStyle = `rgba(${br},${bg},${bb},${a*0.85})`;
-        ctx.lineWidth = 1.4;
-        ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(midx,midy); ctx.lineTo(kx,ky); ctx.stroke();
-      }
-      // scattered sparks flying off around the path, not just riding on it
-      const sparkCount = Math.random()<0.7 ? 1+Math.floor(Math.random()*2) : 0;
-      for(let s=0;s<sparkCount;s++){
-        const sx = pts[i].x + (Math.random()-0.5)*44, sy = pts[i].y + (Math.random()-0.5)*44;
-        const sr = 0.8+Math.random()*1.8;
-        ctx.fillStyle = Math.random()<0.5 ? `rgba(255,255,255,${0.4+Math.random()*0.5})` : `rgba(${c2[0]},${c2[1]},${c2[2]},${0.4+Math.random()*0.4})`;
-        ctx.beginPath(); ctx.arc(sx,sy,sr,0,Math.PI*2); ctx.fill();
+      if(includeExtras){
+        const dx=pts[i].x-pts[i-1].x, dy=pts[i].y-pts[i-1].y;
+        const len=Math.hypot(dx,dy)||1;
+        const nx=-dy/len, ny=dx/len;
+        const branchCount = Math.random()<0.85 ? (Math.random()<0.4?2:1)+(Math.random()<0.15?1:0) : 0;
+        for(let bIdx=0; bIdx<branchCount; bIdx++){
+          const mx=pts[i-1].x+dx*Math.random(), my=pts[i-1].y+dy*Math.random();
+          const off=(Math.random()-0.5)*46;
+          const kx=mx+nx*off, ky=my+ny*off;
+          const midx=(mx+kx)/2+(Math.random()-0.5)*10, midy=(my+ky)/2+(Math.random()-0.5)*10;
+          const [br,bg,bb] = lerpRGB(c1,c2,Math.random());
+          ctx.strokeStyle = `rgba(${br},${bg},${bb},${a*0.85*alphaScale})`;
+          ctx.lineWidth = 1.4*widthScale;
+          ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(midx,midy); ctx.lineTo(kx,ky); ctx.stroke();
+        }
+        const sparkCount = Math.random()<0.7 ? 1+Math.floor(Math.random()*2) : 0;
+        for(let s=0;s<sparkCount;s++){
+          const sx = pts[i].x + (Math.random()-0.5)*44, sy = pts[i].y + (Math.random()-0.5)*44;
+          const sr = 0.8+Math.random()*1.8;
+          ctx.fillStyle = Math.random()<0.5 ? `rgba(255,255,255,${(0.4+Math.random()*0.5)*alphaScale})` : `rgba(${c2[0]},${c2[1]},${c2[2]},${(0.4+Math.random()*0.4)*alphaScale})`;
+          ctx.beginPath(); ctx.arc(sx,sy,sr,0,Math.PI*2); ctx.fill();
+        }
       }
     }
-    // a bright, slightly flickering burst at the leading tip
-    const tip = pts[pts.length-1];
-    const flick = 0.7+Math.random()*0.3;
-    const eg = ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,22);
-    eg.addColorStop(0, `rgba(255,255,255,${0.9*flick})`);
-    eg.addColorStop(0.5, `rgba(${c1[0]},${c1[1]},${c1[2]},${0.5*flick})`);
-    eg.addColorStop(1, `rgba(${c1[0]},${c1[1]},${c1[2]},0)`);
-    ctx.fillStyle = eg;
-    ctx.beginPath(); ctx.arc(tip.x,tip.y,22,0,Math.PI*2); ctx.fill();
-  } else if(style==='energy'){
-    // soft aura, kept intentionally light — a couple of gently offset
-    // translucent passes plus a clean bright core, not a big blurry cloud
-    ctx.globalCompositeOperation = 'lighter';
-    for(let layer=1; layer>=0; layer--){
-      const spread = layer*3;
+    if(includeTip){
+      const tip = pts[pts.length-1];
+      const flick = 0.7+Math.random()*0.3;
+      const eg = ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,22);
+      eg.addColorStop(0, `rgba(255,255,255,${0.9*flick*alphaScale})`);
+      eg.addColorStop(0.5, `rgba(${c1[0]},${c1[1]},${c1[2]},${0.5*flick*alphaScale})`);
+      eg.addColorStop(1, `rgba(${c1[0]},${c1[1]},${c1[2]},0)`);
+      ctx.fillStyle = eg;
+      ctx.beginPath(); ctx.arc(tip.x,tip.y,22,0,Math.PI*2); ctx.fill();
+    }
+  } else if(style==='neon'){
+    // edge-lit neon tube: the two gradient colors run as separate glowing
+    // rails on either side of a bright white centerline, with a soft pulsing
+    // outer halo — reads as a lit tube, not a paint stroke or a spark shower.
+    // Thickened vs. the old version so it stays readable next to the others.
+    const pulse = 0.85+Math.sin(now()/1000*4)*0.15;
+    for(let side=-1; side<=1; side+=2){
       for(let i=1;i<pts.length;i++){
-        const a = i/pts.length;
-        const [r,g,b] = lerpRGB(c1,c2,a);
-        ctx.strokeStyle = `rgba(${r},${g},${b},0.14)`;
-        ctx.lineWidth = 10+a*9-layer*2;
+        const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
+        const a = posA*ageA;
+        const [r,g,b] = side<0 ? c1 : c2;
+        const dx=pts[i].x-pts[i-1].x, dy=pts[i].y-pts[i-1].y;
+        const len=Math.hypot(dx,dy)||1;
+        const nx=-dy/len*3.2*side, ny=dx/len*3.2*side;
+        ctx.shadowColor = `rgba(${r},${g},${b},0.9)`; ctx.shadowBlur = 16*pulse*shadowScale;
+        ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.85*alphaScale})`;
+        ctx.lineWidth = (3.6+posA*3.6)*widthScale;
         ctx.beginPath();
-        ctx.moveTo(pts[i-1].x+spread, pts[i-1].y-spread);
-        ctx.lineTo(pts[i].x+spread, pts[i].y-spread);
+        ctx.moveTo(pts[i-1].x+nx, pts[i-1].y+ny); ctx.lineTo(pts[i].x+nx, pts[i].y+ny);
         ctx.stroke();
       }
     }
-    ctx.globalCompositeOperation = 'source-over';
+    ctx.shadowBlur = 0;
     for(let i=1;i<pts.length;i++){
-      const a = i/pts.length;
-      const [r,g,b] = lerpRGB(c1,c2,a);
-      ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.55})`;
-      ctx.lineWidth = 3+a*4;
+      const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
+      ctx.strokeStyle = `rgba(255,255,255,${posA*ageA*0.95*alphaScale})`;
+      ctx.lineWidth = (2.4+posA*2.6)*widthScale;
       ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
     }
+    if(includeTip){
+      const tip = pts[pts.length-1];
+      const ng = ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,20*pulse);
+      ng.addColorStop(0, `rgba(255,255,255,${0.85*alphaScale})`);
+      ng.addColorStop(0.5, `rgba(${c2[0]},${c2[1]},${c2[2]},${0.4*alphaScale})`);
+      ng.addColorStop(1, `rgba(${c2[0]},${c2[1]},${c2[2]},0)`);
+      ctx.fillStyle = ng;
+      ctx.beginPath(); ctx.arc(tip.x,tip.y,20*pulse,0,Math.PI*2); ctx.fill();
+    }
+  } else if(style==='comet'){
+    // bright comet head at the leading tip, with a smooth glowing tail and
+    // fine dust motes drifting off behind it — no jaggedness at all, the
+    // opposite feel from electric. Thickened tail vs. the old version.
     for(let i=1;i<pts.length;i++){
-      const a = i/pts.length;
-      ctx.strokeStyle = `rgba(255,255,255,${a*0.6})`;
-      ctx.lineWidth = 1.6+a*1.6;
+      const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
+      const [r,g,b] = lerpRGB(c1,c2,posA);
+      ctx.shadowColor = `rgba(${r},${g},${b},0.7)`; ctx.shadowBlur = 14*shadowScale;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${posA*posA*0.85*ageA*alphaScale})`;
+      ctx.lineWidth = (3+posA*posA*15)*widthScale;
       ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    if(includeExtras){
+      // dust motes drifting off the tail, denser near the older (faint) end
+      for(let i=0;i<pts.length;i+=2){
+        const posA = i/pts.length;
+        if(Math.random() > 0.5+posA*0.3) continue;
+        const [r,g,b] = lerpRGB(c1,c2,posA);
+        const off = (1-posA)*18;
+        const mx = pts[i].x + (Math.random()-0.5)*off, my = pts[i].y + (Math.random()-0.5)*off;
+        ctx.fillStyle = `rgba(${r},${g},${b},${(1-posA)*0.5*alphaScale})`;
+        ctx.beginPath(); ctx.arc(mx,my, 0.6+Math.random()*1.4, 0, Math.PI*2); ctx.fill();
+      }
+    }
+    if(includeTip){
+      const tip = pts[pts.length-1];
+      const cg = ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,17);
+      cg.addColorStop(0, `rgba(255,255,255,${0.95*alphaScale})`);
+      cg.addColorStop(0.4, `rgba(${c2[0]},${c2[1]},${c2[2]},${0.7*alphaScale})`);
+      cg.addColorStop(1, `rgba(${c2[0]},${c2[1]},${c2[2]},0)`);
+      ctx.fillStyle = cg;
+      ctx.beginPath(); ctx.arc(tip.x,tip.y,17,0,Math.PI*2); ctx.fill();
     }
   } else {
     // classic — width-tapered gradient stroke with a soft glow and a
-    // bright leading tip, tuned to look good as the un-styled default
+    // bright leading tip, tuned to look good as the un-styled default.
+    // Thickened vs. the old version so it stays readable next to the others.
     for(let i=1;i<pts.length;i++){
-      const a = (i/pts.length);
-      const [r,g,b] = lerpRGB(c1,c2,a);
-      ctx.shadowColor = `rgba(${r},${g},${b},0.6)`; ctx.shadowBlur = 10;
-      ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.92})`;
-      ctx.lineWidth = 3+a*7;
+      const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
+      const [r,g,b] = lerpRGB(c1,c2,posA);
+      ctx.shadowColor = `rgba(${r},${g},${b},0.6)`; ctx.shadowBlur = 10*shadowScale;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${posA*ageA*0.92*alphaScale})`;
+      ctx.lineWidth = (4+posA*10)*widthScale;
       ctx.beginPath(); ctx.moveTo(pts[i-1].x, pts[i-1].y); ctx.lineTo(pts[i].x, pts[i].y); ctx.stroke();
     }
     ctx.shadowBlur = 0;
-    const tip = pts[pts.length-1];
-    ctx.fillStyle = `rgba(255,255,255,0.55)`;
-    ctx.beginPath(); ctx.arc(tip.x,tip.y,3.5,0,Math.PI*2); ctx.fill();
+    if(includeTip){
+      const tip = pts[pts.length-1];
+      ctx.fillStyle = `rgba(255,255,255,${0.55*alphaScale})`;
+      ctx.beginPath(); ctx.arc(tip.x,tip.y,3.5,0,Math.PI*2); ctx.fill();
+    }
   }
+}
+
+// Optional "leave an afterimage" pass — draws a longer-persistence, fainter
+// echo of the SAME style as the live trail (not a fixed generic look),
+// using an extended cutoff so older strokes smear/linger instead of
+// vanishing after 160ms. Skips each style's extra particles/tip-flash so it
+// reads as a soft trailing ghost rather than a second full copy of the effect.
+function drawTrailAfterimage(){
+  if(!trailSettings.afterimage) return;
+  const cutoff = now()-520;
+  const pts = trail.filter(p=>p.t>=cutoff);
+  if(pts.length<2) return;
+  const theme = TRAIL_COLORS[trailSettings.color];
+  const c1 = theme.rgb, c2 = theme.rgb2 || theme.rgb;
+  const style = trailSettings.style;
+  ctx.save();
+  ctx.lineCap='round'; ctx.lineJoin='round';
+  ctx.globalCompositeOperation = 'lighter';
+  drawStyledStroke(pts, style, c1, c2, {
+    alphaScale: 0.4,
+    widthScale: 1.1,
+    shadowScale: 0.7,
+    includeExtras: false,
+    includeTip: false,
+    ageAlphaFn: i => clamp(1-(now()-pts[i].t)/520, 0, 1)
+  });
+  ctx.globalCompositeOperation = 'source-over';
   ctx.restore();
 }
 
