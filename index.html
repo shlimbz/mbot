@@ -225,10 +225,23 @@
     <div class="go-title" id="gameOverTitle">쓰러졌다...</div>
     <div class="stat-row"><span>SCORE</span><b class="num" id="finalScore">0</b></div>
     <div class="stat-row"><span>DISTANCE</span><b class="num" id="finalDist">0 m</b></div>
+    <div class="stat-row"><span>정확도</span><b class="num" id="finalAccuracy">0%</b></div>
     <div class="stat-row"><span>MAX COMBO</span><b class="num" id="finalCombo">0</b></div>
+    <div class="stat-row"><span>피니셔</span><b class="num" id="finalFinisher">0</b></div>
     <div class="stat-row"><span>BEST SCORE</span><b class="num" id="bestScore">0</b></div>
     <button class="btn" id="retryBtn">다시 도전</button>
     <button class="btn secondary" id="goMenuBtn">메인 메뉴로</button>
+  </div>
+</div>
+
+<div class="overlay hidden" id="stageClearScreen">
+  <div class="panel">
+    <div class="go-title" style="color:var(--gold)" id="stageClearTitle">구간 클리어!</div>
+    <div class="stat-row"><span>정확도</span><b class="num" id="stageAccuracy">0%</b></div>
+    <div class="stat-row"><span>MAX COMBO</span><b class="num" id="stageMaxCombo">0</b></div>
+    <div class="stat-row"><span>피니셔</span><b class="num" id="stageFinisher">0</b></div>
+    <button class="btn" id="stageContinueBtn">다음 구간</button>
+    <button class="btn secondary" id="stageMenuBtn">메인 메뉴로</button>
   </div>
 </div>
 
@@ -290,11 +303,44 @@ const SPRITE_RUN_FRAMES = 6;
 const SPRITE_ATK_FRAMES = 4;
 const SPRITE_KEYS = Object.keys(SPRITE_META);
 const SPRITES = {};
+// Every frame is drawn anchored by (horizontal center of its own artwork,
+// bottom of its own artwork) rather than by the raw PNG canvas's nominal
+// center — this makes drawEnemyAt() immune to any frame whose artwork
+// isn't perfectly centered/padded the same way as its neighbors within its
+// own file (a very easy thing to get slightly wrong when exporting a
+// multi-frame run cycle by hand, and the classic cause of a character that
+// otherwise animates fine but visibly drifts/slides sideways as it cycles
+// frames). Computed once per image, right after it finishes loading.
+function computeSpriteAnchor(img){
+  try{
+    const w = img.naturalWidth, h = img.naturalHeight;
+    if(!w || !h) return;
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const cctx = c.getContext('2d');
+    cctx.drawImage(img, 0, 0);
+    const data = cctx.getImageData(0, 0, w, h).data;
+    let minX=w, maxX=0, minY=h, maxY=0, found=false;
+    const step = Math.max(1, Math.floor(Math.max(w,h)/220)); // sample, not every pixel — perf
+    for(let y=0;y<h;y+=step){
+      for(let x=0;x<w;x+=step){
+        if(data[(y*w+x)*4+3] > 10){
+          found = true;
+          if(x<minX) minX=x; if(x>maxX) maxX=x;
+          if(y<minY) minY=y; if(y>maxY) maxY=y;
+        }
+      }
+    }
+    if(found){
+      img.spriteAnchor = { cx: (minX+maxX)/2/w, bottomY: maxY/h };
+    }
+  }catch(e){ /* canvas tainted (cross-origin without CORS) — falls back to naive centering */ }
+}
 Object.assign(SPRITE_META, BOSS_SPRITE_META); // so the loader below covers both pools in one pass
 Object.keys(SPRITE_META).forEach(key=>{
   const meta = SPRITE_META[key];
   const base = 'assets/sprites/' + key + '/';
-  const toImg = src => { const img = new Image(); img.src = src; return img; };
+  const toImg = src => { const img = new Image(); img.onload = ()=>computeSpriteAnchor(img); img.src = src; return img; };
   const runImgs = [];
   for(let i=0;i<SPRITE_RUN_FRAMES;i++) runImgs.push(toImg(base+'run_'+i+'.png'));
   const atkImgs = [];
@@ -332,9 +378,10 @@ DIR_COLOR.tap = dirColor('tap',1);
 
 // V / 역V / Z / 번개 are decomposed into 8-direction combos (matches the
 // original design doc's own approach: high recognition, easy to implement).
-// These four are the "shape combo" patterns — see pickShapeFor() — which is
-// what makes a blade challenge drawable as one continuous stroke instead of
-// discrete per-step swipes (see strokeMode in the pointer handlers below).
+// These four can appear as a single STEP inside a blade pattern (see
+// shapeStepChance() near makeBladeEnemy) — which is what makes that one
+// step drawable as one continuous stroke instead of a plain swipe (see
+// strokeMode in the pointer handlers below).
 const SHAPE_COMBOS = {
   'V':  ['downright','upright'],               // 계곡 모양
   '^':  ['upright','downright'],               // 산 모양 (역V)
@@ -342,6 +389,25 @@ const SHAPE_COMBOS = {
   '⚡': ['downleft','downright','downleft']    // 지그재그 (번개)
 };
 const SHAPE_COLORS = { 'V':'#63b3ff', '^':'#ff9f4a', 'Z':'#c9a0ff', '⚡':'#f0c419' };
+// V/^/Z/⚡ now live INSIDE a normal blade pattern as a single step, exactly
+// like a plain arrow direction — a pattern can be e.g. ['right', {shape:'Z'},
+// 'left']: draw the right swipe, then draw the whole Z as one continuous
+// stroke, then the left swipe, same as if all three were arrows. A pattern
+// step is either a plain direction string, or one of these shape-step
+// objects. These three helpers are the single place that distinguishes them.
+function isShapeStep(s){ return !!(s && typeof s==='object' && s.shape); }
+// A nominal "closing direction" for a shape step, used only for cosmetics
+// (slash-effect angle/color, step-clash sound pitch) that were written
+// assuming every step is a plain direction — uses the shape's own last leg.
+function stepDirForFx(s){ return isShapeStep(s) ? SHAPE_COMBOS[s.shape][SHAPE_COMBOS[s.shape].length-1] : s; }
+function stepColor(s){ return isShapeStep(s) ? (SHAPE_COLORS[s.shape]||'#f0c419') : (DIR_COLOR[s]||'#f0c419'); }
+// Deep-enough copy of a pattern array (shape-step objects are tiny and
+// never mutated in place, but this keeps retries/templates from sharing
+// references just in case).
+function clonePattern(p){ return p.map(s => isShapeStep(s) ? {shape:s.shape} : s); }
+// Readable string form of a pattern, for the enemy-signature "avoid the
+// exact same challenge twice in a row" check.
+function patternSignature(p){ return p.map(s => isShapeStep(s) ? '◆'+s.shape : s).join(','); }
 // Drawn as real vector strokes (not font glyphs) so V/^/Z/⚡ share the same
 // visual weight as everything else instead of looking like mismatched
 // letters/emoji — size is the icon's roughly-diameter in px, centered at
@@ -563,16 +629,10 @@ const BLADE_TIME_MIN = 0.55;
 const ORB_TIME_BASE = 0.4;        // s, time to spot the first orb
 const ORB_TIME_PER_ORB = 0.48;    // s, additional time per orb (search + tap)
 const ORB_TIME_MIN = 0.95;
-// V/^/Z/⚡ shape-combo patterns (see SHAPE_COMBOS) — rolled independently of
-// the stage's normal step-count range so they show up in every stage (not
-// just ones whose bladeLevels happen to include a 2- or 3-step pattern), and
-// given extra time since drawing the whole shape in one stroke takes longer
-// than an equivalent number of separate swipes.
-// Calibrated so shapes show up in ~30% of ALL enemies (not just blade-type
-// ones) — since only ~68% of enemies are blade-type at all (see pickKind's
-// orb/blade split), the per-blade-pattern roll needs to run higher than 30%
-// to land on a 70/30 arrow/shape split across the whole run.
-const SHAPE_COMBO_CHANCE = 0.44;
+// V/^/Z/⚡ shape-steps (see shapeStepChance() near makeBladeEnemy) take
+// extra time since drawing one as one continuous stroke takes longer than
+// an equivalent single arrow swipe — this bonus is added once per
+// shape-step present in a pattern.
 const SHAPE_COMBO_TIME_BONUS = 1.1;
 // isFlickerHidden's memorize-then-hide cycle needs ~1.6-2.3s before the
 // FIRST hide even happens (see initialShow there) — without this bonus, the
@@ -587,11 +647,11 @@ const FLICKER_TIME_BONUS = 1.3;
 // flavour — it's snapped to each stage's `end` value once the stage is
 // actually cleared, so the number and the real progress never drift apart.
 const STAGES = [
-  { id:1, start:0,    end:1000, bladeLevels:[1],     orbCounts:[3],    mobCount:10, flicker:false, reverse:false, boss:{ hits:3, gimmick:null } },
-  { id:2, start:1000, end:2000, bladeLevels:[2,3],   orbCounts:[3],    mobCount:10, flicker:false, reverse:false, boss:null },
-  { id:3, start:2000, end:3000, bladeLevels:[3,4],   orbCounts:[4],    mobCount:10, flicker:true,  reverse:false, boss:{ hits:3, gimmick:'flicker' } },
-  { id:4, start:3000, end:4000, bladeLevels:[4,5],   orbCounts:[5],    mobCount:10, flicker:false, reverse:true,  boss:null },
-  { id:5, start:4000, end:5000, bladeLevels:[5],     orbCounts:[6],    mobCount:10, flicker:true,  reverse:true,  boss:{ phases:5, gimmick:'random', final:true } },
+  { id:1, start:0,    end:1000, bladeLevels:[1],     orbCounts:[3],    mobCount:10, flicker:false, reverse:false, shapeChance:0.12, boss:{ hits:3, gimmick:null } },
+  { id:2, start:1000, end:2000, bladeLevels:[2,3],   orbCounts:[3],    mobCount:10, flicker:false, reverse:false, shapeChance:0.18, boss:null },
+  { id:3, start:2000, end:3000, bladeLevels:[3,4],   orbCounts:[4],    mobCount:10, flicker:true,  reverse:false, shapeChance:0.24, boss:{ hits:3, gimmick:'flicker' } },
+  { id:4, start:3000, end:4000, bladeLevels:[4,5],   orbCounts:[5],    mobCount:10, flicker:false, reverse:true,  shapeChance:0.30, boss:null },
+  { id:5, start:4000, end:5000, bladeLevels:[5],     orbCounts:[6],    mobCount:10, flicker:true,  reverse:true,  shapeChance:0.36, boss:{ phases:5, gimmick:'random', final:true } },
 ];
 const BOSS_HITS_NEEDED = 3; // fallback default, actual stage bosses set their own hit/phase count above
 
@@ -636,10 +696,19 @@ resize();
 
 /* ============================== STATE ============================== */
 
-let gameState = 'title'; // title | playing | paused | gameover | testing
+let gameState = 'title'; // title | playing | paused | gameover | stageclear | testing
 let score = 0, distance = 0, combo = 0, maxCombo = 0, hp = PLAYER_MAX_HP;
 let bestScore = 0;
 try { bestScore = parseInt(localStorage.getItem('bladerush_best')||'0',10) || 0; } catch(e){ bestScore = 0; }
+
+// Real-gameplay (non-test-mode) hit stats, for the stage-clear / game-over
+// summary screens. runStats accumulates over the whole run; stageStats
+// resets every time a new stage starts, so the stage-clear screen can show
+// numbers for just the stage that was just cleared.
+function freshStats(){ return {attempts:0, perfect:0, good:0, late:0, miss:0, wrong:0, finisherHits:0}; }
+let runStats = freshStats();
+let stageStats = freshStats();
+function accuracyOf(s){ const succ=s.perfect+s.good+s.late; return s.attempts ? Math.round(succ/s.attempts*100) : 100; }
 
 let queue = [];
 let activeEnemy = null;
@@ -650,7 +719,7 @@ let stageMobsCleared = 0;
 let stageMobsSpawned = 0;
 function currentStage(){ return STAGES[clamp(stageIdx, 0, STAGES.length-1)]; }
 let spawnCooldown = 1.2;
-let bossFight = null; // {hitsLanded, hitsNeeded, forceGimmick}
+let bossFight = null; // {hitsLanded, hitsNeeded, forceGimmick, hadFailure}
 
 let lastKind = null, kindStreak = 0;
 let lastEnemySignature = null;
@@ -673,14 +742,22 @@ let patternPopT = 1;
 let running = false;
 let lastFrameReal = 0;
 
-/* ---- juice: screen shake, slash streaks, perfect-streak escalation ---- */
+/* ---- juice: screen shake, slash streaks, combo/perfect-streak escalation ---- */
 let shakeMag = 0;
 let slashFx = [];
-let perfectStreak = 0;
+let perfectStreak = 0; // consecutive PERFECT-only hits — drives the "🔥 PERFECT xN" bonus line only
+// Consecutive successful clears regardless of judgement (PERFECT/GOOD/LATE)
+// — resets on a WRONG or a MISS (timeout), same as `combo`, but tracked
+// here too so it also works in test mode (where `combo`/score are
+// intentionally not updated). This is what actually gates the finisher now:
+// difficulty ramping up made maintaining a run of PERFECTs (and therefore
+// the old perfectStreak-gated finisher) nearly impossible, so the finisher
+// now just needs a run of ANY clears within the time limit.
+let clearStreak = 0;
 let hitStopUntilReal = 0; // brief near-total freeze on a PERFECT hit
 let zoomPunch = 0;        // 0..1, decays after a PERFECT hit; drives a quick camera punch-in
 
-function fxTier(){ return perfectStreak<3 ? 0 : perfectStreak<7 ? 1 : perfectStreak<12 ? 2 : 3; }
+function fxTier(){ return clearStreak<3 ? 0 : clearStreak<7 ? 1 : clearStreak<12 ? 2 : 3; }
 
 function triggerShake(mag){ shakeMag = Math.max(shakeMag, mag); }
 
@@ -694,21 +771,33 @@ let soundEnabled = true;
 try{ soundEnabled = localStorage.getItem('bladerush_sound') !== 'off'; }catch(e){}
 
 /* ---- blade-trail visual settings: color palette + effect style ---- */
+// Trimmed down to 3 basic colors + rainbow + 2 dark/"blackened" variants,
+// per feedback that the full 7-color palette was too much to choose from.
 const TRAIL_COLORS = {
   crimson: { label:'블레이즈',   rgb:[255,70,70],  rgb2:[255,190,50]  }, // red -> gold
   cyan:    { label:'프로스트',   rgb:[110,225,255],rgb2:[70,110,255]  }, // cyan -> deep blue
   gold:    { label:'솔라',       rgb:[255,215,80], rgb2:[255,110,30]  }, // gold -> orange
-  violet:  { label:'갤럭시',     rgb:[180,100,255],rgb2:[255,90,200]  }, // violet -> magenta
-  emerald: { label:'베놈',       rgb:[70,230,160], rgb2:[200,255,60]  }, // emerald -> lime
-  sunset:  { label:'선셋',       rgb:[255,140,60], rgb2:[255,60,130]  }, // orange -> pink
-  aurora:  { label:'오로라',     rgb:[80,220,255], rgb2:[180,100,255] }  // cyan -> violet
+  // dark/"blackened" pair — near-black core fading into a single saturated
+  // accent, instead of a bright two-tone gradient, for a more menacing look
+  onyx:    { label:'오닉스',     rgb:[14,10,16],   rgb2:[150,20,55]   }, // near-black -> blood red
+  abyss:   { label:'어비스',     rgb:[10,10,18],   rgb2:[90,25,160]   }, // near-black -> deep violet
+  // Only color that isn't a fixed two-tone gradient — rgb/rgb2 are just a
+  // sane fallback for anything that reads theme colors directly (the swatch
+  // preview below, mainly). `animated:true` tells drawStyledStroke to
+  // replace every color lookup along the stroke with a live, continuously
+  // shifting hue instead (see styleColor) — different points along the
+  // trail show different hues, AND the whole thing keeps cycling over time,
+  // so it visibly shifts even mid-swipe while you're still drawing.
+  rainbow: { label:'레인보우',   rgb:[255,80,80],  rgb2:[130,90,255], animated:true }
 };
 const TRAIL_STYLES = {
   classic:  { label:'클래식' },       // simple width-tapered stroke (current default)
   blade:    { label:'칼날 베기' },    // crisp white-hot core + colored glow, like real steel
   electric: { label:'전격' },         // jagged sparking branches + scattered crackle particles
   neon:     { label:'네온' },         // dual-color edge-lit tube glow, pulsing outer halo
-  comet:    { label:'혜성' }          // bright comet head with a streaming dust tail
+  comet:    { label:'혜성' },         // bright comet head with a streaming dust tail
+  galaxy:   { label:'은하수' },       // soft nebula core + twinkling star sparkles drifting along the trail
+  heart:    { label:'하트' }          // soft core + sparkling little hearts drifting along the trail
 };
 let trailSettings = { color:'crimson', style:'classic', afterimage:false };
 try{
@@ -1059,13 +1148,6 @@ function pickBladeStep(prev){
   return d;
 }
 
-// Pick a shape name for a pattern of this exact length, or null for a plain random sequence
-function pickShapeFor(len){
-  const candidates = Object.keys(SHAPE_COMBOS).filter(k => SHAPE_COMBOS[k].length===len);
-  if(candidates.length===0) return null;
-  return Math.random()<0.4 ? pick(candidates) : null;
-}
-
 function pickGimmicks(){
   const st = currentStage();
   if(!st.flicker && !st.reverse) return {flicker:false, reverse:false};
@@ -1075,37 +1157,54 @@ function pickGimmicks(){
   return {flicker:false, reverse:false};
 }
 
+// V/^/Z/⚡ now live as a possible STEP inside any blade pattern, same as an
+// arrow — each slot in a pattern independently rolls a chance to be a
+// shape-step instead of a plain direction, so a pattern is just as likely
+// to be all arrows, all shapes, or a mix (e.g. right, {shape:'Z'}, left).
+// This is what makes shapes show up starting at stage 1 (a 1-step pattern
+// can itself be a single shape) and mixed in with arrows at any stage.
+// The actual chance ramps up stage by stage (see STAGES[].shapeChance) so
+// the later stages lean more on shapes for a smoother difficulty curve;
+// this is just the fallback if a stage doesn't specify one.
+const SHAPE_STEP_CHANCE_DEFAULT = 0.20;
+function shapeStepChance(){
+  const st = currentStage();
+  return st.shapeChance!=null ? st.shapeChance : SHAPE_STEP_CHANCE_DEFAULT;
+}
+
 function makeBladeEnemy(lenOverride){
   const spriteKey = pickSpriteKey();
   const sp = SPRITES[spriteKey];
-  let pattern=null, shapeName=null, len;
-  if(lenOverride){
-    // explicit length requested (test mode / boss-phase retry) — only use a
-    // shape if one exists at exactly that length, so the request is honored
-    len = lenOverride;
-    const shape = pickShapeFor(len);
-    if(shape){ shapeName = shape; pattern = SHAPE_COMBOS[shape].slice(); }
-  } else if(Math.random() < SHAPE_COMBO_CHANCE){
-    // normal stage play — roll for a shape combo independently of bladeLen(),
-    // so V/^/Z/⚡ show up in every stage instead of only ones whose length
-    // range happens to include 2 or 3
-    const shape = pick(Object.keys(SHAPE_COMBOS));
-    shapeName = shape; pattern = SHAPE_COMBOS[shape].slice(); len = pattern.length;
-  } else {
-    len = bladeLen();
-  }
-  if(!pattern){
-    pattern = [];
-    let prev=null;
-    for(let i=0;i<len;i++){ const d=pickBladeStep(prev); pattern.push(d); prev=d; }
+  const len = lenOverride || bladeLen();
+  const pattern = [];
+  const stepChance = shapeStepChance();
+  let prev = null, shapeStepCount = 0, firstShape = null;
+  for(let i=0;i<len;i++){
+    if(Math.random() < stepChance){
+      const shape = pick(Object.keys(SHAPE_COMBOS));
+      pattern.push({shape});
+      if(!firstShape) firstShape = shape;
+      shapeStepCount++;
+      prev = null; // reset the no-repeat tracker — a shape isn't a single arrow direction
+    } else {
+      const d = pickBladeStep(prev);
+      pattern.push(d);
+      prev = d;
+    }
   }
   const gm = pickGimmicks();
   gm.reverse = false; // reverse is orb-only (see point 7); flicker stays blade-only by design
+  // extra time per shape-step: drawing a whole V/^/Z/⚡ as one continuous
+  // stroke takes longer than an equivalent single swipe, so each one adds
+  // its own bonus on top of the normal per-step time budget
   const tl = Math.max(BLADE_TIME_MIN, (BLADE_TIME_BASE + BLADE_TIME_PER_STEP*len) * difficultyFactor()
-    + (shapeName?SHAPE_COMBO_TIME_BONUS:0) + (gm.flicker?FLICKER_TIME_BONUS:0));
+    + SHAPE_COMBO_TIME_BONUS*shapeStepCount + (gm.flicker?FLICKER_TIME_BONUS:0));
+  const label = shapeStepCount===0 ? sp.kor
+    : shapeStepCount===1 ? `${sp.kor} (${firstShape})`
+    : `${sp.kor} (복합 ${shapeStepCount})`;
   return Object.assign(baseRuntime(), {
-    typeKey:'blade', spriteKey, name: shapeName? `${sp.kor} (${shapeName})` : sp.kor, color:sp.color, pattern, shapeName,
-    timeLimit:tl, timer:tl, dmg: 8+len*2, scoreVal: 90+len*45,
+    typeKey:'blade', spriteKey, name: label, color:sp.color, pattern,
+    timeLimit:tl, timer:tl, dmg: 8+len*2, scoreVal: 90+len*45 + shapeStepCount*20,
     isBoss:false, approachDuration: rand(0.8,1.3),
     flicker: gm.flicker, reverse: gm.reverse
   });
@@ -1140,8 +1239,7 @@ function spawnBossPhase(template, forceGimmick, isFirstPhase=true){
   if(template){
     // retry the exact same challenge after a failed attempt, per player's request
     e = template.typeKey==='orb' ? makeOrbEnemy(template.pattern.length) : makeBladeEnemy(template.pattern.length);
-    e.pattern = template.pattern.slice();
-    e.shapeName = template.shapeName || null;
+    e.pattern = clonePattern(template.pattern);
   } else if(pick){
     // flicker only makes sense on blade, reverse only on orb — pick the
     // matching enemy kind so the forced gimmick is always valid. Length is
@@ -1182,7 +1280,7 @@ function spawnBossPhase(template, forceGimmick, isFirstPhase=true){
   return e;
 }
 
-function signatureOf(e){ return e.typeKey+':'+e.pattern.join(','); }
+function signatureOf(e){ return e.typeKey+':'+patternSignature(e.pattern); }
 
 function pickKind(){
   let kind = Math.random()<0.32 ? 'orb' : 'blade';
@@ -1242,7 +1340,8 @@ function resetGame(){
   stageIdx=0; stageMobsCleared=0; stageMobsSpawned=0;
   lastKind=null; kindStreak=0; lastEnemySignature=null;
   timeScale=1; slowmoUntilReal=0;
-  particles=[]; floatingTexts=[]; slashFx=[]; shakeMag=0; perfectStreak=0; hitStopUntilReal=0; zoomPunch=0;
+  runStats=freshStats(); stageStats=freshStats();
+  particles=[]; floatingTexts=[]; slashFx=[]; trailPourParticles=[]; shakeMag=0; perfectStreak=0; clearStreak=0; hitStopUntilReal=0; zoomPunch=0;
   playerAnim={bob:0, hitT:-1, anim:null, animT:0};
   updateHUD();
 }
@@ -1262,6 +1361,7 @@ function startGame(checkpoint){
   document.getElementById('titleScreen').classList.add('hidden');
   document.getElementById('testMenuScreen').classList.add('hidden');
   document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('stageClearScreen').classList.add('hidden');
   document.getElementById('pauseScreen').classList.add('hidden');
   document.getElementById('testHUD').style.display='none';
   document.getElementById('hud').style.display='';
@@ -1289,7 +1389,9 @@ function gameOver(){
   document.getElementById('gameOverTitle').textContent = '쓰러졌다...';
   document.getElementById('finalScore').textContent = Math.floor(score);
   document.getElementById('finalDist').textContent = Math.floor(distance)+' m';
+  document.getElementById('finalAccuracy').textContent = accuracyOf(runStats)+'%';
   document.getElementById('finalCombo').textContent = maxCombo;
+  document.getElementById('finalFinisher').textContent = runStats.finisherHits||0;
   document.getElementById('bestScore').textContent = Math.floor(bestScore);
   document.getElementById('gameOverScreen').classList.remove('hidden');
 }
@@ -1310,7 +1412,9 @@ function gameClear(){
   document.getElementById('gameOverTitle').textContent = '🏆 클리어!';
   document.getElementById('finalScore').textContent = Math.floor(score);
   document.getElementById('finalDist').textContent = Math.floor(distance)+' m';
+  document.getElementById('finalAccuracy').textContent = accuracyOf(runStats)+'%';
   document.getElementById('finalCombo').textContent = maxCombo;
+  document.getElementById('finalFinisher').textContent = runStats.finisherHits||0;
   document.getElementById('bestScore').textContent = Math.floor(bestScore);
   document.getElementById('gameOverScreen').classList.remove('hidden');
 }
@@ -1339,6 +1443,7 @@ function quitToMenu(){
   setPauseBtnVisible(false);
   document.getElementById('pauseScreen').classList.add('hidden');
   document.getElementById('gameOverScreen').classList.add('hidden');
+  document.getElementById('stageClearScreen').classList.add('hidden');
   document.getElementById('testHUD').style.display='none';
   document.getElementById('hud').style.display='';
   document.getElementById('titleScreen').classList.remove('hidden');
@@ -1471,7 +1576,7 @@ function startTest(type, len, gimmick, shape){
 
   activeEnemy=null; queue=[]; dyingEnemies=[]; particles=[]; floatingTexts=[]; wave=null; bossFight=null;
   playerAnim={bob:0, hitT:-1, anim:null, animT:0};
-  slashFx=[]; shakeMag=0; perfectStreak=0; hitStopUntilReal=0; zoomPunch=0;
+  slashFx=[]; shakeMag=0; perfectStreak=0; clearStreak=0; hitStopUntilReal=0; zoomPunch=0;
 
   if(type!=='freedraw') spawnTestEnemy();
 
@@ -1488,21 +1593,16 @@ function spawnTestEnemy(){
   let e;
   if(cfg.type==='blade') e = makeBladeEnemy(cfg.len);
   else if(cfg.type==='shape'){
-    // force the exact V/^/Z/⚡ pattern regardless of SHAPE_COMBO_CHANCE, so
-    // you can drill one specific shape instead of waiting for it to come up
-    const shapePattern = SHAPE_COMBOS[cfg.shape];
-    e = makeBladeEnemy(shapePattern.length);
-    e.pattern = shapePattern.slice();
-    e.shapeName = cfg.shape;
-    // makeBladeEnemy() may have internally rolled a DIFFERENT same-length
-    // shape (e.g. asked for Z, got ⚡ picked for the label) before we forced
-    // the pattern above — fix the name label to match what's actually shown
+    // force a length-1 pattern consisting solely of the requested shape, so
+    // you can drill one specific V/^/Z/⚡ without waiting for it to come up
+    e = makeBladeEnemy(1);
+    e.pattern = [{shape: cfg.shape}];
     const baseName = e.name.replace(/\s*\([^)]*\)$/, '');
     e.name = `${baseName} (${cfg.shape})`;
     // recompute the time limit fresh so the shape bonus is included exactly
     // once, regardless of whether makeBladeEnemy() happened to internally
-    // roll a (possibly different) shape at this same length
-    const baseTl = Math.max(BLADE_TIME_MIN, (BLADE_TIME_BASE + BLADE_TIME_PER_STEP*shapePattern.length) * difficultyFactor());
+    // roll a (possibly different) step before we forced the pattern above
+    const baseTl = Math.max(BLADE_TIME_MIN, (BLADE_TIME_BASE + BLADE_TIME_PER_STEP*1) * difficultyFactor());
     e.timeLimit = baseTl + SHAPE_COMBO_TIME_BONUS + (e.flicker?FLICKER_TIME_BONUS:0);
     e.timer = e.timeLimit;
   }
@@ -1518,7 +1618,18 @@ function spawnTestEnemy(){
     // to actually hide anything
     if(e.flicker){ e.timeLimit += FLICKER_TIME_BONUS; e.timer = e.timeLimit; }
   }
-  else e = spawnBossPhase(); // 'finisher' test still exercises boss patterns
+  else {
+    // 'finisher' test — exercises the real boss-fight flow (same bossFight
+    // tracking as actual play) so testing finisher rate means something:
+    // one boss persists across all of its phases, and only clearing every
+    // phase with zero WRONG/MISS triggers the finisher. Only create a new
+    // bossFight if one isn't already in progress — mid-fight retries/next
+    // phases go through handleBossPhaseResolved instead of back through here.
+    if(!bossFight){
+      bossFight = { hitsLanded:0, hitsNeeded: BOSS_HITS_NEEDED, forceGimmick: null, spriteKey: pickBossSpriteKey(), hadFailure:false };
+    }
+    e = spawnBossPhase(null, bossFight.forceGimmick, true);
+  }
   e.state='active'; e.phase='approach'; e.approachTimer=e.approachDuration; e.stepIndex=0; e.timer=e.timeLimit;
   activeEnemy = e;
 }
@@ -1656,7 +1767,7 @@ function spawnWave(){
   // quota met — nothing left in flight, so resolve the boss (if any) or move on
   if(activeEnemy || queue.length>0) return;
   if(st.boss){
-    bossFight = { hitsLanded:0, hitsNeeded: st.boss.hits || st.boss.phases || BOSS_HITS_NEEDED, forceGimmick: st.boss.gimmick||null, spriteKey: pickBossSpriteKey() };
+    bossFight = { hitsLanded:0, hitsNeeded: st.boss.hits || st.boss.phases || BOSS_HITS_NEEDED, forceGimmick: st.boss.gimmick||null, spriteKey: pickBossSpriteKey(), hadFailure:false };
     queue.push(spawnBossPhase(null, bossFight.forceGimmick, true));
     activateNext();
     spawnCooldown = 3.4;
@@ -1667,7 +1778,9 @@ function spawnWave(){
 
 // Called once a stage's boss is defeated, or once its mob quota is cleared
 // for boss-less stages. Snaps the displayed distance to the stage's design
-// boundary, heals to full, and saves a checkpoint right at that boundary.
+// boundary, heals to full, then shows the between-stage summary panel
+// (accuracy / max combo / finisher count for the stage just cleared) and
+// waits for the player to tap through — see continueToNextStage().
 function stageAdvance(){
   const st = currentStage();
   distance = st.end;
@@ -1676,14 +1789,52 @@ function stageAdvance(){
     gameClear();
     return;
   }
+  showStageClear();
+}
+
+function showStageClear(){
+  gameState = 'stageclear';
+  stopBGM();
+  setPauseBtnVisible(false);
+  document.getElementById('stageClearTitle').textContent = `구간 ${currentStage().id} 클리어!`;
+  document.getElementById('stageAccuracy').textContent = accuracyOf(stageStats)+'%';
+  document.getElementById('stageMaxCombo').textContent = maxCombo;
+  document.getElementById('stageFinisher').textContent = stageStats.finisherHits||0;
+  document.getElementById('stageClearScreen').classList.remove('hidden');
+  updateHUD();
+}
+
+function continueToNextStage(){
+  if(gameState!=='stageclear') return;
+  document.getElementById('stageClearScreen').classList.add('hidden');
   stageIdx++;
   stageMobsCleared = 0;
   stageMobsSpawned = 0;
+  stageStats = freshStats();
   saveCheckpoint();
   refreshContinueButton();
+  gameState = 'playing';
+  setPauseBtnVisible(true);
   showBanner(`구간 ${STAGES[stageIdx].id} 진입!`);
   spawnCooldown = 1.4;
   updateHUD();
+  lastFrameReal = now();
+  startBGM();
+}
+
+// "메인 메뉴로" from the stage-clear screen — the stage that was just
+// cleared still gets banked into the checkpoint (same as tapping "다음
+// 구간" would), so "이어하기" later resumes AFTER this stage, not before
+// it; it just skips actually starting the next stage's gameplay.
+function stageMenuFromClear(){
+  if(gameState!=='stageclear') return;
+  stageIdx++;
+  stageMobsCleared = 0;
+  stageMobsSpawned = 0;
+  distance = currentStage().start;
+  stageStats = freshStats();
+  saveCheckpoint();
+  quitToMenu();
 }
 
 function activateNext(){
@@ -1758,41 +1909,51 @@ function resolveWaveIfDone(){
 
 /* ============================== FINISHER / BOSS / FX ============================== */
 
-// Finisher is boss-only now: landing a PERFECT hit on a boss (blade or orb
-// pattern, doesn't matter which) triggers slow-motion + a flashy payoff.
+// Finisher now fires exactly once per boss fight: only when ALL of that
+// boss's phases are cleared with zero WRONG/MISS along the way (see
+// bossFight.hadFailure, set in wrongAttemptRetry/failEnemy). Slow-motion
+// plays while a lightning-bolt slash (down-right, down-left, down-right —
+// see drawFinisherFx) draws itself across the screen one leg at a time;
+// the "FINISH!" banner only appears once that's fully drawn, not before.
 let finisherFxStart = 0, finisherFxUntil = 0;
-const FINISHER_FX_DURATION = 900; // ms — matches the slow-mo window
+const FINISHER_FX_DURATION = 900; // ms — how long the slash takes to draw+hold+fade
+const FINISHER_BANNER_DELAY = 320; // ms — banner waits for the slash to finish drawing in
 
 function triggerFinisher(){
-  slowmoUntilReal = now() + 900;
+  slowmoUntilReal = now() + FINISHER_FX_DURATION + FINISHER_BANNER_DELAY + 300;
   flashScreen('gold');
-  showBanner('PERFECT!');
   triggerShake(24);
   finisherFxStart = now();
   finisherFxUntil = finisherFxStart + FINISHER_FX_DURATION;
+  setTimeout(()=>{ showBanner('FINISH!'); }, FINISHER_BANNER_DELAY);
   if(testState.active){
     testState.stats.finisherHits = (testState.stats.finisherHits||0)+1;
+  } else {
+    runStats.finisherHits = (runStats.finisherHits||0)+1;
+    stageStats.finisherHits = (stageStats.finisherHits||0)+1;
   }
 }
 
-// Big full-screen Z-shaped "slash mark" that draws itself on across the
-// screen then fades — the finisher's signature visual. Uses the player's
-// own chosen trail color/theme so it feels like the same blade did it.
+// Big full-screen lightning-bolt "slash mark" that draws itself on across
+// the screen leg by leg, then fades — the finisher's signature visual.
+// Uses the player's own chosen trail color/theme so it feels like the same
+// blade did it. Path: down-right, down-left, down-right (not a letter "Z").
 function drawFinisherFx(){
   if(now() > finisherFxUntil) return;
   const t = (now()-finisherFxStart)/FINISHER_FX_DURATION; // 0..1
   const theme = TRAIL_COLORS[trailSettings.color];
   const c1 = theme.rgb, c2 = theme.rgb2 || theme.rgb;
-  const drawT = clamp(t/0.30, 0, 1);           // the Z slashes in over the first 30%
+  const drawT = clamp(t/0.30, 0, 1);           // the bolt slashes in over the first 30%
   const fadeA = t<0.55 ? 1 : clamp(1-(t-0.55)/0.45, 0, 1); // holds, then fades over the rest
 
-  const padX = W*0.10, padY = H*0.05;
-  const topY = H*0.30, botY = H*0.68;
+  const xLeft = W*0.18, xRight = W*0.82;
+  const topY = H*0.24, botY = H*0.72;
+  const segH = (botY-topY)/3;
   const pts = [
-    {x:padX,   y:topY},
-    {x:W-padX, y:topY},
-    {x:padX,   y:botY},
-    {x:W-padX, y:botY}
+    {x:xLeft,  y:topY},
+    {x:xRight, y:topY+segH},   // leg 1: down-right
+    {x:xLeft,  y:topY+segH*2}, // leg 2: down-left
+    {x:xRight, y:botY}         // leg 3: down-right
   ];
   const segT = drawT*3;
   ctx.save();
@@ -1814,10 +1975,10 @@ function drawFinisherFx(){
     ctx.lineWidth = 7;
     ctx.beginPath(); ctx.moveTo(p0.x,p0.y); ctx.lineTo(ex,ey); ctx.stroke();
   }
-  // brief radial flash behind the Z right as it finishes drawing
+  // brief radial flash behind the bolt right as it finishes drawing
   if(t<0.4){
     const flashA = clamp(1-t/0.4,0,1)*0.35;
-    const g2 = ctx.createRadialGradient(W/2,H*0.49,0,W/2,H*0.49,W*0.6);
+    const g2 = ctx.createRadialGradient(W/2,H*0.48,0,W/2,H*0.48,W*0.6);
     g2.addColorStop(0, `rgba(${c1[0]},${c1[1]},${c1[2]},${flashA})`);
     g2.addColorStop(1, `rgba(${c1[0]},${c1[1]},${c1[2]},0)`);
     ctx.fillStyle = g2;
@@ -1832,21 +1993,38 @@ function handleBossPhaseResolved(wasSuccess, resolvedEnemy){
     bossFight.hitsLanded++;
     bossFight.retryTemplate = null;
     if(bossFight.hitsLanded>=bossFight.hitsNeeded){
-      score += 500;
-      slowmoUntilReal = now()+1100;
-      flashScreen('gold');
-      showBanner(currentStage().boss && currentStage().boss.final ? '최종보스 처치!' : '보스 처치!');
+      const flawless = !bossFight.hadFailure;
+      const pos = currentEnemyScreenPos(resolvedEnemy);
+      if(flawless){
+        triggerFinisher();
+        spawnParticles(pos.x,pos.y,'#f0c419', 30);
+        spawnParticles(pos.x,pos.y,'#fff6cf', 18);
+      } else {
+        slowmoUntilReal = now()+1100;
+        flashScreen('gold');
+        if(!testState.active) showBanner(currentStage().boss && currentStage().boss.final ? '최종보스 처치!' : '보스 처치!');
+      }
       bossFight = null;
+      if(testState.active){
+        // 'finisher' test loops on its own — clearing (flawlessly or not)
+        // just spins up a brand new boss fight so the finisher-rate stat
+        // keeps accumulating, instead of handing off to stageAdvance().
+        setTimeout(()=>{ if(gameState==='testing') spawnTestEnemy(); }, flawless ? 1500 : 700);
+        return;
+      }
+      score += 500;
       updateHUD();
-      setTimeout(()=>{ if(gameState==='playing') stageAdvance(); }, 700);
+      setTimeout(()=>{ if(gameState==='playing') stageAdvance(); }, flawless ? 1500 : 700);
       return;
     }
   } else if(resolvedEnemy){
     // failed — retry the SAME challenge (costs HP, but you get another shot at it)
-    bossFight.retryTemplate = { typeKey: resolvedEnemy.typeKey, pattern: resolvedEnemy.pattern.slice(), shapeName: resolvedEnemy.shapeName||null };
+    bossFight.hadFailure = true;
+    bossFight.retryTemplate = { typeKey: resolvedEnemy.typeKey, pattern: clonePattern(resolvedEnemy.pattern) };
   }
   setTimeout(()=>{
-    if(gameState==='playing' && bossFight){
+    const liveState = testState.active ? 'testing' : 'playing';
+    if(gameState===liveState && bossFight){
       queue.push(spawnBossPhase(bossFight.retryTemplate, bossFight.forceGimmick, false));
       activateNext();
     }
@@ -1935,7 +2113,7 @@ function handleOrbTap(pos){
 }
 
 function advanceStep(){
-  const clearedDir = activeEnemy.pattern[activeEnemy.stepIndex];
+  const clearedDir = stepDirForFx(activeEnemy.pattern[activeEnemy.stepIndex]);
   activeEnemy.stepIndex++;
   patternPopT = 0;
   if(activeEnemy.stepIndex >= activeEnemy.pattern.length){
@@ -1972,15 +2150,13 @@ function succeedEnemy(){
   const judge = judgementFor(ratio);
 
   if(judge.label==='PERFECT') perfectStreak++; else perfectStreak=0;
+  clearStreak++;
   const tier = fxTier();
-  // finisher fires on: a PERFECT hit against any boss phase, OR a PERFECT
-  // that lands the combo streak on a multiple of 10 (10, 20, 30...)
-  const isFinisherHit = judge.label==='PERFECT' && (e.isBoss || (perfectStreak>0 && perfectStreak%10===0));
 
   const pos = currentEnemyScreenPos(e);
   spawnParticles(pos.x,pos.y, judge.color, (e.isBoss?36:18) + tier*8);
   spawnFloatText(pos.x,pos.y-40*pos.scale-10, judge.label, judge.color);
-  playerAnim.anim = isFinisherHit ? 'finisher' : (judge.label==='PERFECT' ? 'perfect' : 'good');
+  playerAnim.anim = judge.label==='PERFECT' ? 'perfect' : 'good';
   playerAnim.animT = 0;
   if(judge.label==='PERFECT'){
     flashScreen('white');
@@ -1994,19 +2170,17 @@ function succeedEnemy(){
   if(e.typeKey==='orb'){
     playOrbClearSound();
   } else {
-    const lastDir = e.pattern[e.pattern.length-1];
-    spawnSlashFx(pos.x, pos.y, DIR_COLOR[lastDir]||'#fff6cf', angleForDir(lastDir));
+    const lastStep = e.pattern[e.pattern.length-1];
+    const lastDir = stepDirForFx(lastStep);
+    spawnSlashFx(pos.x, pos.y, stepColor(lastStep), angleForDir(lastDir));
     playSlashSound(lastDir, 0.03);
   }
   playEnemyDeathSound(e.isBoss);
   if(e.isBoss) playBossHitSound();
   hapticPulse(judge.label==='PERFECT'? 18 : judge.label==='GOOD'? 10 : 6);
-
-  if(isFinisherHit){
-    triggerFinisher();
-    spawnParticles(pos.x,pos.y,'#f0c419', 30);
-    spawnParticles(pos.x,pos.y,'#fff6cf', 18);
-  }
+  // Finisher no longer fires per-hit — see handleBossPhaseResolved, which
+  // triggers it once, only when a boss's entire fight (all phases) is
+  // cleared with zero WRONG/MISS along the way.
 
   if(testState.active){
     testState.stats.attempts++;
@@ -2020,6 +2194,10 @@ function succeedEnemy(){
     combo++;
     if(combo>maxCombo) maxCombo=combo;
     if(!e.isBoss) stageMobsCleared++;
+    runStats.attempts++; stageStats.attempts++;
+    if(judge.label==='PERFECT'){ runStats.perfect++; stageStats.perfect++; }
+    else if(judge.label==='GOOD'){ runStats.good++; stageStats.good++; }
+    else { runStats.late++; stageStats.late++; }
     updateHUD();
   }
 
@@ -2027,7 +2205,7 @@ function succeedEnemy(){
   dyingEnemies.push(e);
   activeEnemy = null;
 
-  if(!testState.active && e.isBoss && bossFight){ handleBossPhaseResolved(true, e); return; }
+  if(e.isBoss && bossFight){ handleBossPhaseResolved(true, e); return; }
 
   if(testState.active){
     setTimeout(()=>{ if(gameState==='testing') spawnTestEnemy(); }, e.isBoss?260:140);
@@ -2045,6 +2223,7 @@ function wrongAttemptRetry(){
   if(!e) return;
 
   perfectStreak = 0;
+  clearStreak = 0;
   const pos = currentEnemyScreenPos(e);
   spawnFloatText(pos.x,pos.y-36*pos.scale-10, 'WRONG', '#ef2b4d');
   playerAnim.hitT = 0;
@@ -2052,6 +2231,8 @@ function wrongAttemptRetry(){
   playFailSound(e.typeKey==='blade' ? 0.06 : 0);
   playPlayerHitSound();
   hapticPulse([0,30,20,30]);
+
+  if(e.isBoss && bossFight) bossFight.hadFailure = true;
 
   if(testState.active){
     testState.stats.attempts++;
@@ -2061,6 +2242,8 @@ function wrongAttemptRetry(){
     const dmg = e.dmg * 1.35;
     hp = clamp(hp - dmg, 0, PLAYER_MAX_HP);
     combo = 0;
+    runStats.attempts++; runStats.wrong++;
+    stageStats.attempts++; stageStats.wrong++;
     damageVignette(1.15);
     updateHUD();
     if(hp<=0){ setTimeout(gameOver, 260); return; }
@@ -2079,6 +2262,7 @@ function failEnemy(){
   if(!e) return;
 
   perfectStreak = 0;
+  clearStreak = 0;
 
   const pos = currentEnemyScreenPos(e);
   spawnFloatText(pos.x,pos.y-40*pos.scale-10, 'MISS', '#ef2b4d');
@@ -2088,6 +2272,8 @@ function failEnemy(){
   playPlayerHitSound();
   hapticPulse([0,35,25,35]);
 
+  if(e.isBoss && bossFight) bossFight.hadFailure = true;
+
   if(testState.active){
     testState.stats.attempts++;
     testState.stats.miss++;
@@ -2096,6 +2282,8 @@ function failEnemy(){
     hp = clamp(hp - e.dmg, 0, PLAYER_MAX_HP);
     combo = 0;
     if(!e.isBoss) stageMobsCleared++;
+    runStats.attempts++; runStats.miss++;
+    stageStats.attempts++; stageStats.miss++;
     damageVignette(1);
     updateHUD();
   }
@@ -2106,8 +2294,8 @@ function failEnemy(){
   dyingEnemies.push(e);
   activeEnemy = null;
 
-  if(!testState.active && e.isBoss && bossFight){
-    if(hp<=0){ setTimeout(gameOver, 260); return; }
+  if(e.isBoss && bossFight){
+    if(!testState.active && hp<=0){ setTimeout(gameOver, 260); return; }
     handleBossPhaseResolved(false, e);
     return;
   }
@@ -2121,22 +2309,20 @@ function failEnemy(){
 }
 
 /* ---- pointer handlers ---- */
-// Shape-combo blade patterns (V/역V/Z/번개 — anything with e.shapeName set) can
-// be drawn as ONE continuous stroke instead of separate release-then-resw type
-// swipes per step, à la Google's Magic Cat Academy. We reuse the same 8-way
-// direction bucketing as a normal single swipe (getGestureDirection), just
-// Shape-combo blade patterns (V/^/Z/⚡ — anything with e.shapeName set) are
-// drawn as ONE continuous stroke and graded as a WHOLE SHAPE at release
-// (see scoreShapeMatch above), not policed segment-by-segment while
-// drawing — this is far more forgiving of natural human variation
-// (rounded corners, size, speed) than trying to detect each straight-line
-// leg's direction individually. Random (non-shape) blade patterns are
-// untouched and keep the old one-swipe-per-step flow.
+// V/^/Z/⚡ shape-STEPS (see isShapeStep) are drawn as ONE continuous stroke
+// and graded as a whole shape at release (see scoreShapeMatch above), not
+// policed segment-by-segment while drawing — this is far more forgiving of
+// natural human variation (rounded corners, size, speed) than trying to
+// detect each straight-line leg's direction individually. This only
+// applies for as long as the CURRENT step is a shape — a pattern can mix
+// shape-steps and plain arrow-steps freely, and each step is drawn and
+// released independently, same as a normal multi-step arrow pattern.
 let strokeMode = false;
 let shapeStrokePoints = [];
 
 function strokeModeActive(){
-  return !!(activeEnemy && activeEnemy.phase==='active' && activeEnemy.typeKey==='blade' && activeEnemy.shapeName);
+  if(!(activeEnemy && activeEnemy.phase==='active' && activeEnemy.typeKey==='blade')) return false;
+  return isShapeStep(activeEnemy.pattern[activeEnemy.stepIndex]);
 }
 
 function pointerDown(x,y){
@@ -2201,21 +2387,22 @@ function pointerUp(x,y){
   onGestureInput(dir, lastTapPos);
 }
 
-// Grades the whole just-finished stroke against the active enemy's expected
-// shape in one shot. Below-threshold match completes the ENTIRE pattern at
-// once (jumps stepIndex straight to the end); otherwise it's a WRONG, same
-// as mismatching a step in the old per-segment system.
+// Grades the just-finished stroke against the CURRENT step's expected
+// shape. A pass advances one step (same as clearing a plain arrow swipe —
+// the next step, whether arrow or another shape, is drawn separately);
+// below-threshold-and-bendy-enough is required, otherwise it's a WRONG,
+// same as mismatching a plain-direction step.
 function resolveShapeStroke(){
   if(!strokeModeActive()){ strokeMode=false; return; }
   const e = activeEnemy;
-  const { dist, bend, pass } = evalShapeMatch(shapeStrokePoints, e.shapeName);
+  const step = e.pattern[e.stepIndex];
+  const { dist, bend, pass } = evalShapeMatch(shapeStrokePoints, step.shape);
   if(testState.active){
-    testState.lastDebug = { expected: e.shapeName, dir: 'd '+dist.toFixed(3)+' / bend '+bend.toFixed(3), earlyDir:null, diff:null,
+    testState.lastDebug = { expected: step.shape, dir: 'd '+dist.toFixed(3)+' / bend '+bend.toFixed(3), earlyDir:null, diff:null,
       result: pass ? 'MATCH' : 'MISMATCH' };
   }
   if(pass){
-    e.stepIndex = e.pattern.length;
-    succeedEnemy();
+    advanceStep();
   } else {
     wrongAttemptRetry();
   }
@@ -2230,6 +2417,8 @@ document.getElementById('startBtn').addEventListener('click', ()=>startGame());
 document.getElementById('continueBtn').addEventListener('click', ()=>startGame(loadCheckpoint()));
 document.getElementById('retryBtn').addEventListener('click', ()=>startGame());
 document.getElementById('goMenuBtn').addEventListener('click', quitToMenu);
+document.getElementById('stageContinueBtn').addEventListener('click', continueToNextStage);
+document.getElementById('stageMenuBtn').addEventListener('click', stageMenuFromClear);
 document.getElementById('pauseBtn').addEventListener('click', pauseGame);
 document.getElementById('resumeBtn').addEventListener('click', resumeGame);
 document.getElementById('menuBtn').addEventListener('click', quitToMenu);
@@ -2542,9 +2731,16 @@ function drawEnemyAt(e, x, y, scale, alpha){
 
   if(img && img.complete && img.naturalWidth>0){
     const drawH = baseH, drawW = drawH * (img.naturalWidth/img.naturalHeight);
+    // anchor by this frame's OWN artwork bounding box (see computeSpriteAnchor)
+    // instead of assuming every frame's art sits dead-center in its PNG —
+    // keeps a run cycle from visibly sliding sideways if the source frames
+    // weren't all padded/centered identically
+    const anchor = img.spriteAnchor;
+    const anchorX = anchor ? anchor.cx*drawW : drawW/2;
+    const anchorBottom = anchor ? anchor.bottomY*drawH : drawH;
     ctx.save();
     ctx.imageSmoothingEnabled = false;
-    ctx.drawImage(img, -drawW/2, 30-drawH, drawW, drawH);
+    ctx.drawImage(img, -anchorX, 30-anchorBottom, drawW, drawH);
     ctx.restore();
   } else {
     // fallback while the sprite image is still decoding
@@ -2603,43 +2799,13 @@ function drawPatternUI(e){
     );
     ctx.restore();
     barY = anchorY + 26;
-  } else if(e.shapeName){
-    // Shape-combo pattern (V/^/Z/⚡) — the whole thing is meant to be drawn
-    // as one continuous stroke (see strokeMode in the pointer handlers), so
-    // it's shown as a single symbol, but styled as the same circular badge
-    // (ring + radial glow) used for the regular per-step direction icons —
-    // just one badge instead of a row of them.
-    const iconSize = clamp(W*0.30, 100, 150);
-    const badgeY = anchorY + iconSize*0.56;
-    const done = e.stepIndex>=e.pattern.length;
-    const baseColor = SHAPE_COLORS[e.shapeName] || '#f0c419';
-    const ringColor = done ? '#39d98a' : baseColor;
-
-    ctx.save();
-    ctx.globalAlpha = hidden? 0 : 1;
-    const pop = patternPopT<1 ? (1-patternPopT)*0.5 : 0;
-    const pulse = 1 + Math.sin(now()/1000*6)*0.05 + pop;
-    ctx.translate(cx, badgeY);
-    ctx.scale(pulse, pulse);
-
-    const g = ctx.createRadialGradient(0,0,6,0,0,iconSize*0.62);
-    g.addColorStop(0, ringColor+'55'); g.addColorStop(1, ringColor+'00');
-    ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0,0,iconSize*0.62,0,Math.PI*2); ctx.fill();
-
-    ctx.strokeStyle = ringColor;
-    ctx.lineWidth = 4;
-    ctx.beginPath(); ctx.arc(0,0,iconSize*0.46,0,Math.PI*2); ctx.stroke();
-
-    ctx.shadowColor = ringColor;
-    ctx.shadowBlur = 24;
-    drawShapeVectorIcon(e.shapeName, iconSize*0.6, '#fff');
-    ctx.shadowBlur = 0;
-    ctx.restore();
-
-    barY = badgeY + iconSize*0.62 + 22;
   } else {
     // Whole sequence shown at once in a row (rather than revealing one step
     // at a time) so a 2+ step pattern can be read and planned in advance.
+    // A step can be a plain arrow OR a V/^/Z/⚡ shape (see isShapeStep) —
+    // a shape-step's badge shows the vector icon instead of an arrow
+    // glyph, but otherwise sits in the row and behaves exactly like any
+    // other step (draw it, it advances, move to the next one).
     const n = e.pattern.length;
     const iconSize = clamp(Math.min(W*0.82/n, 132), 42, 132);
     const gap = iconSize*0.30;
@@ -2651,10 +2817,11 @@ function drawPatternUI(e){
     ctx.globalAlpha = hidden? 0 : 1;
     for(let i=0;i<n;i++){
       const d = e.pattern[i];
+      const shapeStep = isShapeStep(d);
       const done = i<e.stepIndex;
       const isCur = i===e.stepIndex;
       const ix = x0 + i*(iconSize+gap);
-      const dColor = DIR_COLOR[d] || '#f0c419';
+      const dColor = stepColor(d);
       const pop = (isCur && patternPopT<1) ? (1-patternPopT)*0.5 : 0;
       const pulse = isCur ? (1 + Math.sin(now()/1000*6)*0.05 + pop) : 1;
       const sizeMul = done ? 0.64 : isCur ? 1 : 0.8;
@@ -2666,7 +2833,8 @@ function drawPatternUI(e){
 
       if(isCur){
         const g = ctx.createRadialGradient(0,0,6,0,0,iconSize*0.62);
-        g.addColorStop(0, dirColor(d,0.42)); g.addColorStop(1, dirColor(d,0));
+        if(shapeStep){ g.addColorStop(0, dColor+'55'); g.addColorStop(1, dColor+'00'); }
+        else { g.addColorStop(0, dirColor(d,0.42)); g.addColorStop(1, dirColor(d,0)); }
         ctx.fillStyle = g; ctx.beginPath(); ctx.arc(0,0,iconSize*0.62,0,Math.PI*2); ctx.fill();
       }
 
@@ -2679,6 +2847,10 @@ function drawPatternUI(e){
         ctx.beginPath();
         ctx.moveTo(-iconSize*0.16,0); ctx.lineTo(-iconSize*0.03,iconSize*0.15); ctx.lineTo(iconSize*0.2,-iconSize*0.17);
         ctx.stroke();
+      } else if(shapeStep){
+        if(isCur){ ctx.shadowColor=dColor; ctx.shadowBlur=20; }
+        drawShapeVectorIcon(d.shape, iconSize*0.62, isCur ? '#fff' : 'rgba(255,255,255,0.82)');
+        ctx.shadowBlur=0;
       } else {
         ctx.fillStyle = isCur ? '#fff' : 'rgba(255,255,255,0.8)';
         ctx.font = `900 ${iconSize*0.5}px Rajdhani, sans-serif`;
@@ -2813,13 +2985,14 @@ function drawStrokeRecognitionDebug(){
   for(let i=1;i<shapeStrokePoints.length;i++) ctx.lineTo(shapeStrokePoints[i].x, shapeStrokePoints[i].y);
   ctx.stroke();
 
-  if(activeEnemy && activeEnemy.shapeName){
-    const { dist, bend, pass } = evalShapeMatch(shapeStrokePoints, activeEnemy.shapeName);
+  const curStep = activeEnemy && activeEnemy.phase==='active' ? activeEnemy.pattern[activeEnemy.stepIndex] : null;
+  if(isShapeStep(curStep)){
+    const { dist, bend, pass } = evalShapeMatch(shapeStrokePoints, curStep.shape);
     const last = shapeStrokePoints[shapeStrokePoints.length-1];
     ctx.fillStyle = pass ? '#39d98a' : '#ff6b81';
     ctx.font = "700 13px Rajdhani, sans-serif";
     ctx.textAlign = 'left';
-    ctx.fillText(`d ${dist.toFixed(2)}/${recognizerMaxDist(activeEnemy.shapeName)} · bend ${bend.toFixed(2)}/${CHORD_MIN_DEVIATION}`, last.x+12, last.y);
+    ctx.fillText(`d ${dist.toFixed(2)}/${recognizerMaxDist(curStep.shape)} · bend ${bend.toFixed(2)}/${CHORD_MIN_DEVIATION}`, last.x+12, last.y);
   }
   ctx.restore();
 }
@@ -2831,6 +3004,99 @@ function lerpRGB(c1, c2, t){
     Math.round(c1[2]+(c2[2]-c1[2])*t)
   ];
 }
+// h: 0..360, s/l: 0..100 -> [r,g,b] 0..255
+function hslToRgb(h, s, l){
+  s/=100; l/=100;
+  const k = n => (n + h/30) % 12;
+  const a = s*Math.min(l, 1-l);
+  const f = n => l - a*Math.max(-1, Math.min(k(n)-3, Math.min(9-k(n), 1)));
+  return [Math.round(255*f(0)), Math.round(255*f(8)), Math.round(255*f(4))];
+}
+// Color lookup used everywhere a style would normally do lerpRGB(c1,c2,posA)
+// — if the selected trail color is the animated 'rainbow' one, this swaps
+// in a live, continuously-cycling hue instead (position along the stroke
+// AND real time both feed the hue, so the whole trail visibly shifts color
+// even while you're mid-swipe), otherwise it's just the normal two-tone
+// gradient. `phase` lets a caller offset the hue (e.g. neon's two rails).
+function styleColor(c1, c2, posA, opts, phase){
+  if(opts.rainbow){
+    const hue = (now()*0.12 + posA*200 + (phase||0)) % 360;
+    return hslToRgb(hue, 88, 60);
+  }
+  return lerpRGB(c1, c2, posA);
+}
+// Small filled heart path, centered at (cx,cy) — used by the 'heart' trail
+// style. `size` is roughly the heart's half-width.
+function drawHeartShape(cx, cy, size){
+  const s = size;
+  ctx.beginPath();
+  ctx.moveTo(cx, cy+s*0.35);
+  ctx.bezierCurveTo(cx-s*1.1, cy-s*0.6, cx-s*0.55, cy-s*1.35, cx, cy-s*0.45);
+  ctx.bezierCurveTo(cx+s*0.55, cy-s*1.35, cx+s*1.1, cy-s*0.6, cx, cy+s*0.35);
+  ctx.closePath();
+}
+
+// Lightweight standalone "pouring" particle pool for the galaxy/heart trail
+// styles — these ADD to the trail line itself rather than replacing it:
+// small motes spawned while drawing that then keep falling under light
+// gravity and fading out over their own lifetime, independent of the
+// trail's short draw cutoff, so they cascade/pour behind the stroke
+// instead of popping in and out in lockstep with it. Positions are
+// computed from spawn time + kinematics rather than integrated every
+// frame, so no per-frame update() hook is needed — just call
+// updateAndDrawTrailPour() once per render.
+let trailPourParticles = [];
+function spawnPourParticles(x, y, color, shape, count, opts){
+  opts = opts || {};
+  for(let i=0;i<count;i++){
+    trailPourParticles.push({
+      x: x + (Math.random()-0.5)*(opts.spread||10),
+      y: y + (Math.random()-0.5)*(opts.spread||10),
+      vx: (Math.random()-0.5)*(opts.vxSpread||60),
+      vy: (opts.vyBase||15) + Math.random()*(opts.vySpread||60),
+      gravity: opts.gravity!=null ? opts.gravity : 160,
+      spawnT: now(),
+      life: (opts.lifeMin||0.5) + Math.random()*(opts.lifeRange||0.5),
+      size: (opts.sizeMin||1) + Math.random()*(opts.sizeRange||2.5),
+      color, shape
+    });
+  }
+  // cheap hard cap so a long, fast swipe can't runaway-accumulate particles
+  if(trailPourParticles.length>320) trailPourParticles.splice(0, trailPourParticles.length-320);
+}
+function updateAndDrawTrailPour(){
+  if(trailPourParticles.length===0) return;
+  const t = now();
+  ctx.save();
+  for(let i=trailPourParticles.length-1;i>=0;i--){
+    const p = trailPourParticles[i];
+    const age = (t-p.spawnT)/1000;
+    if(age>=p.life){ trailPourParticles.splice(i,1); continue; }
+    const a = clamp(1-age/p.life, 0, 1);
+    const x = p.x + p.vx*age;
+    const y = p.y + p.vy*age + 0.5*p.gravity*age*age;
+    ctx.globalAlpha = a;
+    if(p.shape==='heart'){
+      ctx.fillStyle = p.color;
+      ctx.shadowColor = p.color; ctx.shadowBlur = 5;
+      drawHeartShape(x,y,p.size);
+      ctx.fill();
+    } else {
+      const sr = p.size;
+      ctx.fillStyle = p.color;
+      ctx.save();
+      ctx.translate(x,y);
+      ctx.beginPath();
+      ctx.moveTo(0,-sr*3); ctx.lineTo(sr*0.6,0); ctx.lineTo(0,sr*3); ctx.lineTo(-sr*0.6,0); ctx.closePath(); ctx.fill();
+      ctx.beginPath();
+      ctx.moveTo(-sr*3,0); ctx.lineTo(0,sr*0.6); ctx.lineTo(sr*3,0); ctx.lineTo(0,-sr*0.6); ctx.closePath(); ctx.fill();
+      ctx.restore();
+    }
+  }
+  ctx.shadowBlur = 0;
+  ctx.globalAlpha = 1;
+  ctx.restore();
+}
 
 function drawTrail(){
   drawTrailAfterimage();
@@ -2841,7 +3107,7 @@ function drawTrail(){
   const c1 = theme.rgb, c2 = theme.rgb2 || theme.rgb;
   const style = trailSettings.style;
   ctx.save(); ctx.lineCap='round'; ctx.lineJoin='round';
-  drawStyledStroke(pts, style, c1, c2, {});
+  drawStyledStroke(pts, style, c1, c2, { rainbow: !!theme.animated });
   ctx.restore();
 }
 
@@ -2855,6 +3121,7 @@ function drawTrail(){
 //   ageAlphaFn  - optional fn(i) -> 0..1 extra per-point fade by age (afterimage only)
 //   includeExtras - electric branches/sparks, comet dust motes (off for afterimage: keeps it a clean echo)
 //   includeTip     - leading-edge flash/glow (off for afterimage: only the live stroke gets the flash)
+//   rainbow        - use the animated hue-cycling color instead of the c1/c2 gradient (see styleColor)
 function drawStyledStroke(pts, style, c1, c2, opts){
   const alphaScale = opts.alphaScale!=null ? opts.alphaScale : 1;
   const widthScale = opts.widthScale!=null ? opts.widthScale : 1;
@@ -2871,7 +3138,7 @@ function drawStyledStroke(pts, style, c1, c2, opts){
     for(let off=-1; off<=1; off+=2){
       for(let i=1;i<pts.length;i++){
         const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
-        const [r,g,b] = lerpRGB(c1,c2,posA);
+        const [r,g,b] = styleColor(c1,c2,posA,opts);
         ctx.strokeStyle = `rgba(${r},${g},${b},${posA*ageA*0.5*alphaScale})`;
         ctx.lineWidth = 2.2*widthScale;
         ctx.beginPath();
@@ -2881,7 +3148,7 @@ function drawStyledStroke(pts, style, c1, c2, opts){
     }
     for(let i=1;i<pts.length;i++){
       const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
-      const [r,g,b] = lerpRGB(c1,c2,posA);
+      const [r,g,b] = styleColor(c1,c2,posA,opts);
       ctx.shadowColor = `rgba(${r},${g},${b},0.95)`; ctx.shadowBlur = 20*shadowScale;
       ctx.strokeStyle = `rgba(255,255,255,${posA*ageA*0.98*alphaScale})`;
       ctx.lineWidth = (1+posA*1.6)*widthScale;
@@ -2899,44 +3166,71 @@ function drawStyledStroke(pts, style, c1, c2, opts){
       ctx.beginPath(); ctx.arc(tip.x,tip.y,26,0,Math.PI*2); ctx.fill();
     }
   } else if(style==='electric'){
-    // dense crackling bolt: thick glowing core, frequent jagged branches,
-    // AND a scattered halo of little sparks flying off around the whole
-    // path (not just riding directly on the line) for a much busier,
-    // more electric feel. Thickened core vs. the old version so it stays
-    // readable next to the other effects.
+    // dense crackling bolt: the core itself is a JAGGED zigzag redrawn
+    // fresh every frame (not a smooth line), so it flickers/crackles like
+    // real electricity instead of sitting still. Longer, more frequent
+    // branching forks (occasionally forking again off a fork, like an
+    // actual lightning tree), a scattered spark halo, and a rare full
+    // strobe — reads like thunder-and-lightning, not a glowing pen stroke.
     for(let i=1;i<pts.length;i++){
       const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
       const a = posA*ageA;
-      const [r,g,b] = lerpRGB(c1,c2,posA);
-      ctx.shadowColor = `rgba(${r},${g},${b},1)`; ctx.shadowBlur = 24*shadowScale;
+      const [r,g,b] = styleColor(c1,c2,posA,opts);
+      const p0 = pts[i-1], p1 = pts[i];
+      const dx=p1.x-p0.x, dy=p1.y-p0.y;
+      const segLen=Math.hypot(dx,dy)||1;
+      const nx=-dy/segLen, ny=dx/segLen;
+
+      // jagged zigzag core — small jittered midpoints, regenerated every
+      // draw call so the bolt visibly crackles frame to frame
+      const corePts = [p0];
+      const jagSteps = 3;
+      for(let s=1;s<jagSteps;s++){
+        const t = s/jagSteps;
+        const jitter = (Math.random()-0.5)*7;
+        corePts.push({ x: p0.x+dx*t+nx*jitter, y: p0.y+dy*t+ny*jitter });
+      }
+      corePts.push(p1);
+
+      ctx.shadowColor = `rgba(${r},${g},${b},1)`; ctx.shadowBlur = 26*shadowScale;
       ctx.strokeStyle = `rgba(${r},${g},${b},${a*0.95*alphaScale})`;
       ctx.lineWidth = (4.5+posA*8)*widthScale;
-      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(corePts[0].x,corePts[0].y);
+      for(let k=1;k<corePts.length;k++) ctx.lineTo(corePts[k].x,corePts[k].y);
+      ctx.stroke();
       ctx.shadowBlur = 0;
       ctx.strokeStyle = `rgba(255,255,255,${a*0.95*alphaScale})`;
       ctx.lineWidth = (1.4+posA*1.8)*widthScale;
-      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(corePts[0].x,corePts[0].y);
+      for(let k=1;k<corePts.length;k++) ctx.lineTo(corePts[k].x,corePts[k].y);
+      ctx.stroke();
 
       if(includeExtras){
-        const dx=pts[i].x-pts[i-1].x, dy=pts[i].y-pts[i-1].y;
-        const len=Math.hypot(dx,dy)||1;
-        const nx=-dy/len, ny=dx/len;
-        const branchCount = Math.random()<0.85 ? (Math.random()<0.4?2:1)+(Math.random()<0.15?1:0) : 0;
+        // longer, busier forks — and sometimes a secondary fork off a fork
+        const branchCount = Math.random()<0.9 ? (Math.random()<0.5?2:1)+(Math.random()<0.25?1:0) : 0;
         for(let bIdx=0; bIdx<branchCount; bIdx++){
-          const mx=pts[i-1].x+dx*Math.random(), my=pts[i-1].y+dy*Math.random();
-          const off=(Math.random()-0.5)*46;
+          const mx=p0.x+dx*Math.random(), my=p0.y+dy*Math.random();
+          const off=(Math.random()-0.5)*70;
           const kx=mx+nx*off, ky=my+ny*off;
-          const midx=(mx+kx)/2+(Math.random()-0.5)*10, midy=(my+ky)/2+(Math.random()-0.5)*10;
-          const [br,bg,bb] = lerpRGB(c1,c2,Math.random());
+          const midx=(mx+kx)/2+(Math.random()-0.5)*14, midy=(my+ky)/2+(Math.random()-0.5)*14;
+          const [br,bg,bb] = styleColor(c1,c2,Math.random(),opts);
           ctx.strokeStyle = `rgba(${br},${bg},${bb},${a*0.85*alphaScale})`;
-          ctx.lineWidth = 1.4*widthScale;
+          ctx.lineWidth = 1.6*widthScale;
           ctx.beginPath(); ctx.moveTo(mx,my); ctx.lineTo(midx,midy); ctx.lineTo(kx,ky); ctx.stroke();
+          if(Math.random()<0.35){
+            const off2 = (Math.random()-0.5)*36;
+            const kx2 = kx+nx*off2*0.6+dx*0.15, ky2 = ky+ny*off2*0.6+dy*0.15;
+            ctx.lineWidth = 1.1*widthScale;
+            ctx.beginPath(); ctx.moveTo(kx,ky); ctx.lineTo(kx2,ky2); ctx.stroke();
+          }
         }
         const sparkCount = Math.random()<0.7 ? 1+Math.floor(Math.random()*2) : 0;
         for(let s=0;s<sparkCount;s++){
-          const sx = pts[i].x + (Math.random()-0.5)*44, sy = pts[i].y + (Math.random()-0.5)*44;
+          const sx = p1.x + (Math.random()-0.5)*50, sy = p1.y + (Math.random()-0.5)*50;
           const sr = 0.8+Math.random()*1.8;
-          ctx.fillStyle = Math.random()<0.5 ? `rgba(255,255,255,${(0.4+Math.random()*0.5)*alphaScale})` : `rgba(${c2[0]},${c2[1]},${c2[2]},${(0.4+Math.random()*0.4)*alphaScale})`;
+          const useWhite = Math.random()<0.5;
+          const [sr2,sg2,sb2] = useWhite ? [255,255,255] : styleColor(c1,c2,Math.random(),opts);
+          ctx.fillStyle = `rgba(${sr2},${sg2},${sb2},${(0.4+Math.random()*0.5)*alphaScale})`;
           ctx.beginPath(); ctx.arc(sx,sy,sr,0,Math.PI*2); ctx.fill();
         }
       }
@@ -2944,12 +3238,17 @@ function drawStyledStroke(pts, style, c1, c2, opts){
     if(includeTip){
       const tip = pts[pts.length-1];
       const flick = 0.7+Math.random()*0.3;
-      const eg = ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,22);
+      const [tr,tg,tb] = styleColor(c1,c2,1,opts);
+      const eg = ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,24);
       eg.addColorStop(0, `rgba(255,255,255,${0.9*flick*alphaScale})`);
-      eg.addColorStop(0.5, `rgba(${c1[0]},${c1[1]},${c1[2]},${0.5*flick*alphaScale})`);
-      eg.addColorStop(1, `rgba(${c1[0]},${c1[1]},${c1[2]},0)`);
+      eg.addColorStop(0.5, `rgba(${tr},${tg},${tb},${0.5*flick*alphaScale})`);
+      eg.addColorStop(1, `rgba(${tr},${tg},${tb},0)`);
       ctx.fillStyle = eg;
-      ctx.beginPath(); ctx.arc(tip.x,tip.y,22,0,Math.PI*2); ctx.fill();
+      ctx.beginPath(); ctx.arc(tip.x,tip.y,24,0,Math.PI*2); ctx.fill();
+      if(Math.random()<0.06){ // rare full thunder-flash strobe for extra punch
+        ctx.fillStyle = `rgba(255,255,255,${0.5*alphaScale})`;
+        ctx.beginPath(); ctx.arc(tip.x,tip.y,40,0,Math.PI*2); ctx.fill();
+      }
     }
   } else if(style==='neon'){
     // edge-lit neon tube: the two gradient colors run as separate glowing
@@ -2961,7 +3260,7 @@ function drawStyledStroke(pts, style, c1, c2, opts){
       for(let i=1;i<pts.length;i++){
         const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
         const a = posA*ageA;
-        const [r,g,b] = side<0 ? c1 : c2;
+        const [r,g,b] = opts.rainbow ? styleColor(c1,c2,0,opts,side<0?0:180) : (side<0 ? c1 : c2);
         const dx=pts[i].x-pts[i-1].x, dy=pts[i].y-pts[i-1].y;
         const len=Math.hypot(dx,dy)||1;
         const nx=-dy/len*3.2*side, ny=dx/len*3.2*side;
@@ -2995,7 +3294,7 @@ function drawStyledStroke(pts, style, c1, c2, opts){
     // opposite feel from electric. Thickened tail vs. the old version.
     for(let i=1;i<pts.length;i++){
       const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
-      const [r,g,b] = lerpRGB(c1,c2,posA);
+      const [r,g,b] = styleColor(c1,c2,posA,opts);
       ctx.shadowColor = `rgba(${r},${g},${b},0.7)`; ctx.shadowBlur = 14*shadowScale;
       ctx.strokeStyle = `rgba(${r},${g},${b},${posA*posA*0.85*ageA*alphaScale})`;
       ctx.lineWidth = (3+posA*posA*15)*widthScale;
@@ -3007,7 +3306,7 @@ function drawStyledStroke(pts, style, c1, c2, opts){
       for(let i=0;i<pts.length;i+=2){
         const posA = i/pts.length;
         if(Math.random() > 0.5+posA*0.3) continue;
-        const [r,g,b] = lerpRGB(c1,c2,posA);
+        const [r,g,b] = styleColor(c1,c2,posA,opts);
         const off = (1-posA)*18;
         const mx = pts[i].x + (Math.random()-0.5)*off, my = pts[i].y + (Math.random()-0.5)*off;
         ctx.fillStyle = `rgba(${r},${g},${b},${(1-posA)*0.5*alphaScale})`;
@@ -3016,12 +3315,76 @@ function drawStyledStroke(pts, style, c1, c2, opts){
     }
     if(includeTip){
       const tip = pts[pts.length-1];
+      const [ctr,ctg,ctb] = styleColor(c1,c2,1,opts);
       const cg = ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,17);
       cg.addColorStop(0, `rgba(255,255,255,${0.95*alphaScale})`);
-      cg.addColorStop(0.4, `rgba(${c2[0]},${c2[1]},${c2[2]},${0.7*alphaScale})`);
-      cg.addColorStop(1, `rgba(${c2[0]},${c2[1]},${c2[2]},0)`);
+      cg.addColorStop(0.4, `rgba(${ctr},${ctg},${ctb},${0.7*alphaScale})`);
+      cg.addColorStop(1, `rgba(${ctr},${ctg},${ctb},0)`);
       ctx.fillStyle = cg;
       ctx.beginPath(); ctx.arc(tip.x,tip.y,17,0,Math.PI*2); ctx.fill();
+    }
+  } else if(style==='galaxy'){
+    // soft, slightly nebulous core plus scattered twinkling 4-point star
+    // sparkles drifting around the path — reads like a trail of stardust.
+    for(let i=1;i<pts.length;i++){
+      const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
+      const [r,g,b] = styleColor(c1,c2,posA,opts);
+      ctx.shadowColor = `rgba(${r},${g},${b},0.65)`; ctx.shadowBlur = 16*shadowScale;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${posA*ageA*0.5*alphaScale})`;
+      ctx.lineWidth = (3+posA*7)*widthScale;
+      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    if(includeExtras){
+      for(let i=0;i<pts.length;i++){
+        if(Math.random()>0.7) continue;
+        const [r,g,b] = styleColor(c1,c2,Math.random(),opts);
+        const color = Math.random()<0.3 ? '#ffffff' : `rgb(${r},${g},${b})`;
+        spawnPourParticles(pts[i].x, pts[i].y, color, 'star', 2+Math.floor(Math.random()*3), {
+          spread:8, vxSpread:80, vyBase:20, vySpread:80, gravity:180,
+          lifeMin:0.45, lifeRange:0.65, sizeMin:0.8, sizeRange:2.0
+        });
+      }
+    }
+    if(includeTip){
+      const tip = pts[pts.length-1];
+      const [tr,tg,tb] = styleColor(c1,c2,1,opts);
+      const g = ctx.createRadialGradient(tip.x,tip.y,0,tip.x,tip.y,20);
+      g.addColorStop(0,`rgba(255,255,255,${0.85*alphaScale})`);
+      g.addColorStop(0.5,`rgba(${tr},${tg},${tb},${0.5*alphaScale})`);
+      g.addColorStop(1,`rgba(${tr},${tg},${tb},0)`);
+      ctx.fillStyle=g; ctx.beginPath(); ctx.arc(tip.x,tip.y,20,0,Math.PI*2); ctx.fill();
+    }
+  } else if(style==='heart'){
+    // thin glowing core plus little sparkling hearts drifting along the trail
+    for(let i=1;i<pts.length;i++){
+      const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
+      const [r,g,b] = styleColor(c1,c2,posA,opts);
+      ctx.shadowColor = `rgba(${r},${g},${b},0.6)`; ctx.shadowBlur = 14*shadowScale;
+      ctx.strokeStyle = `rgba(${r},${g},${b},${posA*ageA*0.5*alphaScale})`;
+      ctx.lineWidth = (2.6+posA*6)*widthScale;
+      ctx.beginPath(); ctx.moveTo(pts[i-1].x,pts[i-1].y); ctx.lineTo(pts[i].x,pts[i].y); ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+    if(includeExtras){
+      for(let i=0;i<pts.length;i++){
+        if(Math.random()>0.65) continue;
+        const [r,g,b] = styleColor(c1,c2,Math.random(),opts);
+        spawnPourParticles(pts[i].x, pts[i].y, `rgb(${r},${g},${b})`, 'heart', 1+Math.floor(Math.random()*3), {
+          spread:10, vxSpread:60, vyBase:15, vySpread:70, gravity:150,
+          lifeMin:0.5, lifeRange:0.7, sizeMin:2.2, sizeRange:3.2
+        });
+      }
+    }
+    if(includeTip){
+      const tip = pts[pts.length-1];
+      const [tr,tg,tb] = styleColor(c1,c2,1,opts);
+      ctx.save();
+      ctx.fillStyle = `rgba(255,255,255,${0.9*alphaScale})`;
+      ctx.shadowColor = `rgb(${tr},${tg},${tb})`; ctx.shadowBlur = 16;
+      drawHeartShape(tip.x,tip.y,9);
+      ctx.fill();
+      ctx.restore();
     }
   } else {
     // classic — width-tapered gradient stroke with a soft glow and a
@@ -3029,7 +3392,7 @@ function drawStyledStroke(pts, style, c1, c2, opts){
     // Thickened vs. the old version so it stays readable next to the others.
     for(let i=1;i<pts.length;i++){
       const posA = i/pts.length, ageA = ageAlphaFn?ageAlphaFn(i):1;
-      const [r,g,b] = lerpRGB(c1,c2,posA);
+      const [r,g,b] = styleColor(c1,c2,posA,opts);
       ctx.shadowColor = `rgba(${r},${g},${b},0.6)`; ctx.shadowBlur = 10*shadowScale;
       ctx.strokeStyle = `rgba(${r},${g},${b},${posA*ageA*0.92*alphaScale})`;
       ctx.lineWidth = (4+posA*10)*widthScale;
@@ -3066,6 +3429,7 @@ function drawTrailAfterimage(){
     shadowScale: 0.7,
     includeExtras: false,
     includeTip: false,
+    rainbow: !!theme.animated,
     ageAlphaFn: i => clamp(1-(now()-pts[i].t)/520, 0, 1)
   });
   ctx.globalCompositeOperation = 'source-over';
@@ -3145,6 +3509,7 @@ function render(){
     drawParticles();
     drawFloatingTexts();
     drawTrail();
+    updateAndDrawTrailPour();
     if(testState.active) drawStrokeRecognitionDebug();
     drawFinisherFx();
   } else {
@@ -3161,7 +3526,7 @@ function loop(t){
   dtReal = Math.min(dtReal, 0.05);
   lastFrameReal = t;
 
-  if(orientationBlocked || gameState==='paused'){ requestAnimationFrame(loop); return; }
+  if(orientationBlocked || gameState==='paused' || gameState==='stageclear'){ requestAnimationFrame(loop); return; }
 
   update(dtReal);
   render();
