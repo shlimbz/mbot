@@ -8,17 +8,20 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@500;600;700&family=Noto+Sans+KR:wght@400;500;700;900&display=swap" rel="stylesheet">
 <style>
+  /* ---- Crayon / notebook-paper theme: bright cream paper, warm ink
+     browns for text, crayon-saturated accent colors instead of the old
+     dark neon-on-black look. ---- */
   :root{
-    --bg-void:#05060c;
-    --panel:rgba(12,15,26,0.80);
-    --panel-border:rgba(139,148,171,0.22);
-    --steel:#8a94a6;
-    --crimson:#ef2b4d;
-    --crimson-glow:#ff5c7a;
-    --gold:#f0c419;
-    --text:#e9ebf3;
-    --text-dim:#9aa0b8;
-    --danger:#ef2b4d;
+    --bg-void:#fbf1da;
+    --panel:rgba(255,252,242,0.92);
+    --panel-border:rgba(120,90,55,0.32);
+    --steel:#8a7a5e;
+    --crimson:#e14b3f;
+    --crimson-glow:#ff7a63;
+    --gold:#e8a324;
+    --text:#3a2f20;
+    --text-dim:#8a7862;
+    --danger:#e14b3f;
   }
   *{box-sizing:border-box; -webkit-tap-highlight-color:transparent; user-select:none;}
   html,body{
@@ -37,57 +40,58 @@
   #hud{ position:fixed; inset:0; pointer-events:none; padding: max(14px, env(safe-area-inset-top)) 14px 0 14px; }
   #hudTop{ display:flex; justify-content:space-between; align-items:flex-start; }
   .hud-left{ display:flex; align-items:center; gap:8px; }
-  .hud-chip{ background:linear-gradient(180deg, rgba(28,32,52,0.85), rgba(12,15,26,0.85)); border:1px solid var(--panel-border); border-radius:14px; padding:7px 14px; backdrop-filter: blur(8px); box-shadow: 0 3px 10px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.06); }
-  .icon-btn{ width:38px; height:38px; padding:0; display:flex; align-items:center; justify-content:center; font-size:17px; pointer-events:auto; cursor:pointer; color:var(--text); background:linear-gradient(180deg, rgba(28,32,52,0.85), rgba(12,15,26,0.85)); border:1px solid var(--panel-border); border-radius:12px; box-shadow: 0 3px 10px rgba(0,0,0,0.28), inset 0 1px 0 rgba(255,255,255,0.06); transition: transform .12s; }
+  .hud-chip{ background:linear-gradient(180deg, rgba(255,255,250,0.92), rgba(255,247,225,0.90)); border:1.5px solid var(--panel-border); border-radius:14px; padding:7px 14px; backdrop-filter: blur(8px); box-shadow: 0 3px 10px rgba(120,90,55,0.14), inset 0 1px 0 rgba(255,255,255,0.6); }
+  .icon-btn{ width:38px; height:38px; padding:0; display:flex; align-items:center; justify-content:center; font-size:17px; pointer-events:auto; cursor:pointer; color:var(--text); background:linear-gradient(180deg, rgba(255,255,250,0.92), rgba(255,247,225,0.90)); border:1.5px solid var(--panel-border); border-radius:12px; box-shadow: 0 3px 10px rgba(120,90,55,0.14), inset 0 1px 0 rgba(255,255,255,0.6); transition: transform .12s; }
   .icon-btn:active{ transform:scale(0.92); }
   #scoreChip .label{font-size:10px; color:var(--text-dim); letter-spacing:1.5px;}
-  #scoreChip .val{font-size:22px; color:var(--gold); line-height:1.1; text-shadow:0 0 12px rgba(240,196,25,0.35);}
+  #scoreChip .val{font-size:22px; color:var(--gold); line-height:1.1; text-shadow:0 0 10px rgba(232,163,36,0.3);}
   #distChip{text-align:center;}
   #distChip .label{font-size:10px; color:var(--text-dim); letter-spacing:1.5px;}
   #distChip .val{font-size:19px; color:var(--text); line-height:1.1;}
   #comboChip{text-align:right; opacity:0; transform:translateY(-4px); transition:opacity .15s, transform .15s;}
   #comboChip.show{opacity:1; transform:translateY(0);}
   #comboChip .label{font-size:10px; color:var(--text-dim); letter-spacing:1.5px;}
-  #comboChip .val{font-size:22px; color:var(--crimson-glow); line-height:1.1; text-shadow:0 0 12px rgba(255,92,122,0.4);}
+  #comboChip .val{font-size:22px; color:var(--crimson); line-height:1.1; text-shadow:0 0 10px rgba(225,75,63,0.3);}
 
   #hpZone{ margin-top:10px; display:flex; align-items:center; gap:8px; }
-  #hpLabel{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; color:var(--crimson-glow); letter-spacing:1px; }
-  #hpWrap{ flex:1; height:17px; border-radius:9px; background:rgba(255,255,255,0.07); border:1px solid var(--panel-border); overflow:hidden; position:relative; box-shadow: inset 0 2px 4px rgba(0,0,0,0.35); }
-  #hpBar{ height:100%; width:100%; background:linear-gradient(180deg, var(--crimson-glow), var(--danger)); transition:width .18s ease-out; box-shadow: inset 0 1px 0 rgba(255,255,255,0.25); }
+  #hpLabel{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; color:var(--crimson); letter-spacing:1px; }
+  #hpWrap{ flex:1; height:17px; border-radius:9px; background:rgba(120,90,55,0.10); border:1.5px solid var(--panel-border); overflow:hidden; position:relative; box-shadow: inset 0 2px 4px rgba(120,90,55,0.15); }
+  #hpBar{ height:100%; width:100%; background:linear-gradient(180deg, var(--crimson-glow), var(--danger)); transition:width .18s ease-out; box-shadow: inset 0 1px 0 rgba(255,255,255,0.35); }
   #hpNum{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:12px; color:var(--text); min-width:34px; text-align:right; }
 
-  .overlay{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:radial-gradient(ellipse at 50% 30%, rgba(20,24,42,0.92), rgba(4,5,10,0.97)); z-index:20; }
+  .overlay{ position:fixed; inset:0; display:flex; align-items:center; justify-content:center; background:radial-gradient(ellipse at 50% 30%, rgba(255,248,228,0.94), rgba(251,241,218,0.97)); z-index:20; }
   .overlay.hidden{display:none;}
-  .panel{ width:min(88vw, 380px); text-align:center; padding:26px 22px; max-height:94vh; overflow-y:auto; -webkit-overflow-scrolling:touch; background:linear-gradient(180deg, rgba(26,30,50,0.7), rgba(10,12,22,0.75)); border:1px solid var(--panel-border); border-radius:22px; box-shadow: 0 16px 40px rgba(0,0,0,0.45), inset 0 1px 0 rgba(255,255,255,0.06); backdrop-filter: blur(10px); }
-  .title-mark{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:38px; letter-spacing:2px; color:var(--text); text-shadow:0 0 24px rgba(239,43,77,0.55); margin:0; }
-  .title-mark span{color:var(--crimson-glow);}
+  .panel{ width:min(88vw, 380px); text-align:center; padding:26px 22px; max-height:94vh; overflow-y:auto; -webkit-overflow-scrolling:touch; background:linear-gradient(180deg, rgba(255,253,245,0.95), rgba(255,248,230,0.92)); border:2px solid var(--panel-border); border-radius:22px; box-shadow: 0 16px 40px rgba(120,90,55,0.18), inset 0 1px 0 rgba(255,255,255,0.7); backdrop-filter: blur(10px); }
+  .title-mark{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:38px; letter-spacing:2px; color:var(--text); text-shadow:0 2px 0 rgba(225,75,63,0.25); margin:0; }
+  .title-mark span{color:var(--crimson);}
   .title-sub{ font-size:13px; color:var(--text-dim); margin-top:6px; letter-spacing:3px; }
   .compass{margin:12px auto 0;}
-  .btn{ margin-top:14px; display:inline-block; width:100%; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:19px; letter-spacing:2px; color:#0a0b12; background:linear-gradient(180deg, var(--gold), #d19f10); border:none; border-radius:14px; padding:14px 40px; box-shadow:0 6px 0 #93700a, 0 10px 24px rgba(240,196,25,0.25); pointer-events:auto; cursor:pointer; }
+  .btn{ margin-top:14px; display:inline-block; width:100%; font-family:'Rajdhani',sans-serif; font-weight:700; font-size:19px; letter-spacing:2px; color:#3a2205; background:linear-gradient(180deg, var(--gold), #c9860f); border:none; border-radius:14px; padding:14px 40px; box-shadow:0 6px 0 #93700a, 0 10px 24px rgba(232,163,36,0.28); pointer-events:auto; cursor:pointer; }
   .btn:active{transform:translateY(4px); box-shadow:0 2px 0 #93700a;}
-  .btn.secondary{ background:linear-gradient(180deg,#2e3750,#171b2b); color:var(--text); box-shadow:0 6px 0 #0b0d16, 0 10px 24px rgba(0,0,0,.35); margin-top:12px; }
-  .btn.ghost{ background:transparent; color:var(--text-dim); box-shadow:none; border:1px solid var(--panel-border); border-radius:12px; font-size:13px; padding:9px; margin-top:10px; }
+  .btn.secondary{ background:linear-gradient(180deg,#fff8e6,#ffefc7); color:var(--text); box-shadow:0 6px 0 var(--panel-border), 0 10px 24px rgba(120,90,55,.15); margin-top:12px; }
+  .btn.ghost{ background:transparent; color:var(--text-dim); box-shadow:none; border:1.5px solid var(--panel-border); border-radius:12px; font-size:13px; padding:9px; margin-top:10px; }
   .rules{ text-align:left; margin-top:10px; font-size:11.5px; color:var(--text-dim); line-height:1.6; }
   .rules b{color:var(--text);}
-  .stat-row{ display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim); margin:6px 0; border-bottom:1px dashed var(--panel-border); padding-bottom:6px; }
+  .stat-row{ display:flex; justify-content:space-between; font-size:13px; color:var(--text-dim); margin:6px 0; border-bottom:1.5px dashed var(--panel-border); padding-bottom:6px; }
   .stat-row b{color:var(--gold); font-family:'Rajdhani',sans-serif; font-size:17px;}
-  .go-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:28px; color:var(--crimson-glow); letter-spacing:2px; margin:0 0 14px 0; }
+  .go-title{ font-family:'Rajdhani',sans-serif; font-weight:700; font-size:28px; color:var(--crimson); letter-spacing:2px; margin:0 0 14px 0; }
   .section-label{ text-align:left; font-size:11.5px; color:var(--text-dim); letter-spacing:1.5px; margin-top:16px; }
   .test-grid{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
   .swatch-row{ display:flex; flex-wrap:wrap; gap:10px; margin-top:8px; }
-  .swatch{ width:40px; height:40px; border-radius:50%; border:2px solid rgba(255,255,255,0.15); cursor:pointer; pointer-events:auto; box-shadow:0 0 0 0 transparent; transition:transform .12s ease, box-shadow .12s ease; }
-  .swatch.selected{ border-color:#fff; transform:scale(1.12); box-shadow:0 0 14px currentColor; }
+  .swatch{ width:40px; height:40px; border-radius:50%; border:2px solid rgba(120,90,55,0.20); cursor:pointer; pointer-events:auto; box-shadow:0 0 0 0 transparent; transition:transform .12s ease, box-shadow .12s ease; }
+  .swatch.selected{ border-color:var(--text); transform:scale(1.12); box-shadow:0 0 14px currentColor; }
   .style-grid{ display:flex; flex-wrap:wrap; gap:8px; margin-top:8px; }
-  .style-btn{ flex:1 1 40%; min-width:120px; padding:10px 8px; border-radius:10px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.05); color:var(--text-dim); font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; cursor:pointer; pointer-events:auto; text-align:center; }
-  .style-btn.selected{ border-color:var(--gold); color:var(--gold); background:rgba(240,196,25,0.12); }
-  .test-opt{ flex:1 1 56px; padding:11px 6px; border-radius:12px; border:1px solid var(--panel-border); background:rgba(255,255,255,0.06); color:var(--text); font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px; cursor:pointer; pointer-events:auto; transition:transform .1s; }
-  .test-opt:active{ background:rgba(240,196,25,0.25); transform:scale(0.95); }
+  .style-btn{ flex:1 1 40%; min-width:120px; padding:10px 8px; border-radius:10px; border:1.5px solid var(--panel-border); background:rgba(120,90,55,0.05); color:var(--text-dim); font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13px; cursor:pointer; pointer-events:auto; text-align:center; }
+  .style-btn.selected{ border-color:var(--gold); color:var(--gold); background:rgba(232,163,36,0.14); }
+  .test-opt{ flex:1 1 56px; padding:11px 6px; border-radius:12px; border:1.5px solid var(--panel-border); background:rgba(120,90,55,0.06); color:var(--text); font-family:'Rajdhani',sans-serif; font-weight:700; font-size:15px; cursor:pointer; pointer-events:auto; transition:transform .1s; }
+  .test-opt:active{ background:rgba(232,163,36,0.25); transform:scale(0.95); }
 
-  #finisherBanner{ position:fixed; left:50%; top:36%; transform:translate(-50%,-50%) scale(0.6); font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13vw; color:var(--gold); text-shadow:0 0 30px rgba(240,196,25,0.85), 0 0 60px rgba(239,43,77,0.5); opacity:0; pointer-events:none; z-index:15; letter-spacing:2px; white-space:nowrap; }
-  #vignette{ position:fixed; inset:0; pointer-events:none; z-index:10; box-shadow: inset 0 0 0 rgba(239,43,77,0); transition: box-shadow .35s ease-out; }
+  #finisherBanner{ position:fixed; left:50%; top:36%; transform:translate(-50%,-50%) scale(0.6); font-family:'Rajdhani',sans-serif; font-weight:700; font-size:13vw; color:var(--gold); text-shadow:0 3px 0 rgba(225,75,63,0.4), 0 0 30px rgba(255,255,255,0.8); opacity:0; pointer-events:none; z-index:15; letter-spacing:2px; white-space:nowrap; -webkit-text-stroke:2px rgba(58,47,32,0.5); }
+  #gimmickAlert{ position:fixed; left:50%; top:max(18px, env(safe-area-inset-top)); transform:translate(-50%,-14px); font-family:'Rajdhani',sans-serif; font-weight:800; font-size:26px; letter-spacing:0.5px; padding:13px 26px; border-radius:999px; background:rgba(255,251,240,0.92); border:2px solid var(--panel-border); backdrop-filter:blur(6px); opacity:0; pointer-events:none; z-index:14; white-space:nowrap; box-shadow:0 6px 22px rgba(120,90,55,0.25); }
+  #vignette{ position:fixed; inset:0; pointer-events:none; z-index:10; box-shadow: inset 0 0 0 rgba(225,75,63,0); transition: box-shadow .35s ease-out; }
   #flash{ position:fixed; inset:0; pointer-events:none; z-index:12; background:#fff; opacity:0; }
 
-  #rotateWarn{ position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; flex-direction:column; gap:14px; background:#05060c; text-align:center; padding:24px; }
+  #rotateWarn{ position:fixed; inset:0; z-index:50; display:none; align-items:center; justify-content:center; flex-direction:column; gap:14px; background:var(--bg-void); text-align:center; padding:24px; }
   #rotateWarn.show{display:flex;}
   #rotateWarn .icon{font-size:52px; animation:rot 1.6s ease-in-out infinite;}
   @keyframes rot{ 0%,100%{transform:rotate(0deg);} 50%{transform:rotate(90deg);} }
@@ -108,6 +112,7 @@
 <div id="vignette"></div>
 <div id="flash"></div>
 <div id="finisherBanner">FINISH!</div>
+<div id="gimmickAlert"></div>
 
 <div id="hud">
   <div id="hudTop">
@@ -213,7 +218,7 @@
     <div class="rules" style="margin-top:0;">
       <div>테스트 모드에서 💾 버튼으로 남긴 설정·타이머·결과 기록입니다. 복사해서 수치 조절할 때 참고하세요.</div>
     </div>
-    <textarea id="testLogArea" readonly style="width:100%; height:220px; margin-top:10px; background:rgba(255,255,255,0.06); color:var(--text); border:1px solid var(--panel-border); border-radius:9px; padding:8px; font-family:'Rajdhani',sans-serif; font-size:12px; resize:vertical; box-sizing:border-box;"></textarea>
+    <textarea id="testLogArea" readonly style="width:100%; height:220px; margin-top:10px; background:rgba(120,90,55,0.06); color:var(--text); border:1px solid var(--panel-border); border-radius:9px; padding:8px; font-family:'Rajdhani',sans-serif; font-size:12px; resize:vertical; box-sizing:border-box;"></textarea>
     <button class="btn secondary" id="testLogCopyBtn" style="margin-top:10px;">📋 복사</button>
     <button class="btn ghost" id="testLogClearBtn">🗑 기록 초기화</button>
     <button class="btn secondary" id="testLogBackBtn">뒤로</button>
@@ -386,7 +391,7 @@ const SHAPE_COMBOS = {
   'V':  ['downright','upright'],               // 계곡 모양
   '^':  ['upright','downright'],               // 산 모양 (역V)
   'Z':  ['right','downleft','right'],
-  '⚡': ['downleft','downright','downleft']    // 지그재그 (번개)
+  '⚡': ['downleft','right','downleft']        // 지그재그 (번개) — matches SHAPE_POINTS below: its middle leg is dead horizontal, not diagonal
 };
 const SHAPE_COLORS = { 'V':'#63b3ff', '^':'#ff9f4a', 'Z':'#c9a0ff', '⚡':'#f0c419' };
 // V/^/Z/⚡ now live INSIDE a normal blade pattern as a single step, exactly
@@ -495,6 +500,9 @@ function pathAvgDistance(a, b){
   return d/a.length;
 }
 const SHAPE_TEMPLATES = {};
+// Straight-line length of each of the shape's own legs (from its literal
+// vertices, NOT resampled) — used by segmentLengthRatiosOk below.
+const SHAPE_TEMPLATE_SEG_LENGTHS = {};
 function buildShapeTemplates(){
   Object.keys(SHAPE_POINTS).forEach(name=>{
     const raw = SHAPE_POINTS[name];
@@ -506,6 +514,9 @@ function buildShapeTemplates(){
       for(let s=1;s<=24;s++) dense.push({x:px+(x-px)*s/24, y:py+(y-py)*s/24});
     }
     SHAPE_TEMPLATES[name] = normalizePath(resamplePath(dense, RECOGNIZER_N));
+    const lens = [];
+    for(let i=1;i<raw.length;i++) lens.push(Math.hypot(raw[i][0]-raw[i-1][0], raw[i][1]-raw[i-1][1]));
+    SHAPE_TEMPLATE_SEG_LENGTHS[name] = lens;
   });
 }
 buildShapeTemplates();
@@ -540,16 +551,108 @@ function chordDeviation(rawPoints){
   }
   return maxd;
 }
+
+// ---- Structural check: did you actually trace THIS shape's corners, in
+// order, with roughly the right proportions — not just end up somewhere
+// close on average? The distance/chord checks above compare the whole path
+// as a point cloud, which turns out to tolerate things it shouldn't: e.g.
+// drawing a clean V and then continuing on with an unrelated extra stroke
+// barely moves the AVERAGE point distance (most of the 32 sample points
+// still land close to the template), and a Z missing its final leg can
+// still average out low enough to sneak under a generous threshold. This
+// section fixes that by simplifying the drawn stroke down to its actual
+// corners (Ramer-Douglas-Peucker) and checking the resulting sequence of
+// 8-way directions against SHAPE_COMBOS exactly, plus each leg's length
+// relative to its neighbor against the template's own proportions — so an
+// extra stroke (wrong direction count) or a missing leg (wrong direction
+// count) or a wildly out-of-proportion "leg" (e.g. a tail tacked onto a
+// real leg, inflating just that one segment) all get rejected even though
+// they'd pass the old point-distance check alone.
+function rdpSimplify(points, epsilon){
+  if(points.length<3) return points.slice();
+  function perpDist(p, a, b){
+    const dx=b.x-a.x, dy=b.y-a.y;
+    const len=Math.hypot(dx,dy);
+    if(len<1e-9) return Math.hypot(p.x-a.x,p.y-a.y);
+    return Math.abs((p.x-a.x)*dy-(p.y-a.y)*dx)/len;
+  }
+  function rdp(pts){
+    if(pts.length<3) return pts;
+    let maxD=0, idx=0;
+    for(let i=1;i<pts.length-1;i++){
+      const d = perpDist(pts[i], pts[0], pts[pts.length-1]);
+      if(d>maxD){ maxD=d; idx=i; }
+    }
+    if(maxD>epsilon){
+      const left = rdp(pts.slice(0,idx+1));
+      const right = rdp(pts.slice(idx));
+      return left.slice(0,-1).concat(right);
+    }
+    return [pts[0], pts[pts.length-1]];
+  }
+  return rdp(points);
+}
+// Simplifies the raw (un-normalized) stroke to its corner vertices, then
+// walks the corners producing a list of {dir, length} — consecutive
+// corners that land in the SAME 8-way direction bucket get merged into one
+// segment (this is what makes a rounded real-world corner still read as a
+// single clean turn). Tiny leftover simplified segments below a length
+// floor are dropped as noise rather than treated as a genuine extra leg.
+function extractDirectionSegments(rawPoints){
+  if(rawPoints.length<2) return [];
+  let minX=Infinity,maxX=-Infinity,minY=Infinity,maxY=-Infinity;
+  rawPoints.forEach(p=>{ minX=Math.min(minX,p.x); maxX=Math.max(maxX,p.x); minY=Math.min(minY,p.y); maxY=Math.max(maxY,p.y); });
+  const size = Math.max(maxX-minX, maxY-minY, 1e-6);
+  const epsilon = size*0.09;
+  const simplified = rdpSimplify(rawPoints, epsilon);
+  const minSegLen = size*0.12;
+  const segs = [];
+  for(let i=1;i<simplified.length;i++){
+    const dx = simplified[i].x-simplified[i-1].x, dy = simplified[i].y-simplified[i-1].y;
+    const segLen = Math.hypot(dx,dy);
+    if(segLen < minSegLen) continue;
+    const d = getGestureDirection(dx,dy,segLen);
+    if(segs.length && segs[segs.length-1].dir===d) segs[segs.length-1].length += segLen;
+    else segs.push({dir:d, length:segLen});
+  }
+  return segs;
+}
+// Exact direction-sequence match against SHAPE_COMBOS[shapeName].
+function directionSequenceMatches(segs, shapeName){
+  const expected = SHAPE_COMBOS[shapeName];
+  if(!expected || segs.length !== expected.length) return false;
+  for(let i=0;i<expected.length;i++) if(segs[i].dir !== expected[i]) return false;
+  return true;
+}
+// Given a sequence match, checks each pair of consecutive legs' length
+// RATIO against the template's own ratio for that pair, within a generous
+// multiplicative band — catches a leg that's wildly out of proportion
+// (e.g. a real leg with an unrelated tail tacked onto it, which inflates
+// just that segment) without punishing normal hand asymmetry.
+function segmentLengthRatiosOk(segs, shapeName){
+  const tmplLens = SHAPE_TEMPLATE_SEG_LENGTHS[shapeName];
+  if(!tmplLens || segs.length !== tmplLens.length) return false;
+  for(let i=0;i<segs.length-1;i++){
+    const actualRatio = segs[i].length / Math.max(segs[i+1].length, 1e-6);
+    const expectedRatio = tmplLens[i] / Math.max(tmplLens[i+1], 1e-6);
+    const rel = actualRatio / Math.max(expectedRatio, 1e-6);
+    if(rel < 0.4 || rel > 2.6) return false;
+  }
+  return true;
+}
 // Single source of truth for "does this drawn stroke count as shapeName?" —
-// both the distance-to-template score (per-shape threshold) AND the
-// chord-deviation check (must actually bend, not just point roughly the
-// right way) have to pass. Returns {dist, bend, pass} so callers can show
-// both numbers in debug/test views.
+// the distance-to-template score AND chord-deviation (overall closeness)
+// AND the structural corner/sequence/proportion checks above all have to
+// pass. Returns the individual pieces too, so debug/test views can show
+// exactly which check failed.
 function evalShapeMatch(rawPoints, shapeName){
   const dist = scoreShapeMatch(rawPoints, shapeName);
   const bend = chordDeviation(rawPoints);
-  const pass = dist <= recognizerMaxDist(shapeName) && bend >= CHORD_MIN_DEVIATION;
-  return { dist, bend, pass };
+  const segs = extractDirectionSegments(rawPoints);
+  const seqOk = directionSequenceMatches(segs, shapeName);
+  const propOk = seqOk && segmentLengthRatiosOk(segs, shapeName);
+  const pass = dist <= recognizerMaxDist(shapeName) && bend >= CHORD_MIN_DEVIATION && seqOk && propOk;
+  return { dist, bend, seqOk, propOk, pass };
 }
 
 // Draws the shape AND makes the stroke order unambiguous: a pulsing dot at
@@ -620,20 +723,22 @@ const MIN_SCALE = 0.14;
 const MAX_SCALE = 2.05;
 const PLAYER_SCALE = 1.35;
 
-// Time limits tuned around average human reaction/execution speed:
-// simple visual reaction ~200-250ms, plus time to actually perform a swipe/tap.
-// These give a fair-but-tight window instead of the old overly generous ones.
-const BLADE_TIME_BASE = 0.36;     // s, time to react to the very first step appearing
-const BLADE_TIME_PER_STEP = 0.40; // s, additional time per swipe step
+// Time limits tuned around average human reaction/execution speed: simple
+// visual reaction ~200-250ms; an 8-way CHOICE reaction (picking the right
+// arrow out of 8) is meaningfully slower per Hick's law, more like
+// 350-450ms; then there's the actual swipe/drag itself on top of that.
+// Arrows get a tight per-step budget since it's one quick directional
+// flick; V/^/Z/⚡ shape-steps get a distinctly larger one since tracing a
+// whole 2-3-leg shape as one continuous stroke genuinely takes an adult
+// several hundred ms longer than a single swipe — but not so much longer
+// that a pattern with a shape in it starts to feel like free time.
+const BLADE_TIME_BASE = 0.42;    // s, time to read/orient to the pattern before the first step
+const ARROW_STEP_TIME = 0.34;    // s, additional time per plain-arrow step
+const SHAPE_STEP_TIME = 0.85;    // s, additional time per V/^/Z/⚡ shape-step
 const BLADE_TIME_MIN = 0.55;
 const ORB_TIME_BASE = 0.4;        // s, time to spot the first orb
 const ORB_TIME_PER_ORB = 0.48;    // s, additional time per orb (search + tap)
 const ORB_TIME_MIN = 0.95;
-// V/^/Z/⚡ shape-steps (see shapeStepChance() near makeBladeEnemy) take
-// extra time since drawing one as one continuous stroke takes longer than
-// an equivalent single arrow swipe — this bonus is added once per
-// shape-step present in a pattern.
-const SHAPE_COMBO_TIME_BONUS = 1.1;
 // isFlickerHidden's memorize-then-hide cycle needs ~1.6-2.3s before the
 // FIRST hide even happens (see initialShow there) — without this bonus, the
 // tightened time limits above can expire before the gimmick ever shows
@@ -655,17 +760,9 @@ const STAGES = [
 ];
 const BOSS_HITS_NEEDED = 3; // fallback default, actual stage bosses set their own hit/phase count above
 
-// Visual theme per stage — sky/ground/mountain/road-accent colors shift
-// gradually across the run so each stage reads as its own little "biome"
-// even without custom art. Warms and brightens toward the finale.
-const STAGE_THEMES = [
-  { skyTop:'#141a3a', skyBottom:'#2d3868', ground:['#282e57','#0d0f1e'], road:['#363d6c','#282f52','#181a2e'], accent:'rgba(255,80,110,0.6)', glow:'rgba(120,90,255,0.20)', farMtn:'rgba(34,38,70,0.85)', nearMtn:'rgba(42,48,84,0.9)', star:true },
-  { skyTop:'#122048', skyBottom:'#2f5390', ground:['#25415f','#0a1420'], road:['#2f4d6c','#25405a','#12202f'], accent:'rgba(90,190,255,0.6)', glow:'rgba(60,180,255,0.20)', farMtn:'rgba(24,44,68,0.85)', nearMtn:'rgba(28,54,80,0.9)', star:true },
-  { skyTop:'#2c1650', skyBottom:'#54227c', ground:['#432461','#170a26'], road:['#522c6e','#3d215a','#1f1136'], accent:'rgba(220,110,255,0.6)', glow:'rgba(230,110,255,0.22)', farMtn:'rgba(48,24,64,0.85)', nearMtn:'rgba(58,30,76,0.9)', star:true },
-  { skyTop:'#452012', skyBottom:'#7a3212', ground:['#552b1c','#1e0d08'], road:['#63331f','#452213','#22100a'], accent:'rgba(255,165,60,0.65)', glow:'rgba(255,140,40,0.22)', farMtn:'rgba(60,28,20,0.88)', nearMtn:'rgba(72,34,24,0.92)', star:false },
-  { skyTop:'#331033', skyBottom:'#701962', ground:['#5a1746','#1c081e'], road:['#661a50','#4a133c','#240c22'], accent:'rgba(255,90,160,0.65)', glow:'rgba(255,70,150,0.24)', farMtn:'rgba(62,14,48,0.88)', nearMtn:'rgba(76,18,58,0.92)', star:true },
-];
-function currentTheme(){ return STAGE_THEMES[clamp(stageIdx, 0, STAGE_THEMES.length-1)]; }
+// Background art is now real images the player supplied (see BG_SKY_IMG /
+// BG_ROAD_IMG near drawBackground) rather than a per-stage procedural
+// palette, so there's no more per-stage theme table here.
 
 /* ============================== CANVAS / SIZE ============================== */
 
@@ -1194,11 +1291,12 @@ function makeBladeEnemy(lenOverride){
   }
   const gm = pickGimmicks();
   gm.reverse = false; // reverse is orb-only (see point 7); flicker stays blade-only by design
-  // extra time per shape-step: drawing a whole V/^/Z/⚡ as one continuous
-  // stroke takes longer than an equivalent single swipe, so each one adds
-  // its own bonus on top of the normal per-step time budget
-  const tl = Math.max(BLADE_TIME_MIN, (BLADE_TIME_BASE + BLADE_TIME_PER_STEP*len) * difficultyFactor()
-    + SHAPE_COMBO_TIME_BONUS*shapeStepCount + (gm.flicker?FLICKER_TIME_BONUS:0));
+  // each step's own per-type time rate (see ARROW_STEP_TIME/SHAPE_STEP_TIME
+  // above), so a pattern's budget reflects exactly what's IN it rather than
+  // one flat per-step rate plus a bolted-on shape bonus
+  const arrowStepCount = len - shapeStepCount;
+  const tl = Math.max(BLADE_TIME_MIN, (BLADE_TIME_BASE + ARROW_STEP_TIME*arrowStepCount + SHAPE_STEP_TIME*shapeStepCount) * difficultyFactor()
+    + (gm.flicker?FLICKER_TIME_BONUS:0));
   const label = shapeStepCount===0 ? sp.kor
     : shapeStepCount===1 ? `${sp.kor} (${firstShape})`
     : `${sp.kor} (복합 ${shapeStepCount})`;
@@ -1594,17 +1692,15 @@ function spawnTestEnemy(){
   if(cfg.type==='blade') e = makeBladeEnemy(cfg.len);
   else if(cfg.type==='shape'){
     // force a length-1 pattern consisting solely of the requested shape, so
-    // you can drill one specific V/^/Z/⚡ without waiting for it to come up
+    // you can drill one specific V/^/Z/⚡ without waiting for it to come up.
+    // No enemy lifecycle here — see e.bareTest in resolveShapeStroke/
+    // drawActiveEnemy: just draw the shape, get a pass/fail, try again.
     e = makeBladeEnemy(1);
     e.pattern = [{shape: cfg.shape}];
+    e.bareTest = true;
+    e.timeLimit = 999999; e.timer = 999999; // no time pressure while drilling
     const baseName = e.name.replace(/\s*\([^)]*\)$/, '');
     e.name = `${baseName} (${cfg.shape})`;
-    // recompute the time limit fresh so the shape bonus is included exactly
-    // once, regardless of whether makeBladeEnemy() happened to internally
-    // roll a (possibly different) step before we forced the pattern above
-    const baseTl = Math.max(BLADE_TIME_MIN, (BLADE_TIME_BASE + BLADE_TIME_PER_STEP*1) * difficultyFactor());
-    e.timeLimit = baseTl + SHAPE_COMBO_TIME_BONUS + (e.flicker?FLICKER_TIME_BONUS:0);
-    e.timer = e.timeLimit;
   }
   else if(cfg.type==='orb') e = makeOrbEnemy(cfg.len);
   else if(cfg.type==='gimmick'){
@@ -1630,7 +1726,8 @@ function spawnTestEnemy(){
     }
     e = spawnBossPhase(null, bossFight.forceGimmick, true);
   }
-  e.state='active'; e.phase='approach'; e.approachTimer=e.approachDuration; e.stepIndex=0; e.timer=e.timeLimit;
+  e.state='active'; e.phase='approach'; e.approachTimer= e.bareTest ? 0 : e.approachDuration; e.stepIndex=0; e.timer=e.timeLimit;
+  if(e.bareTest) e.phase='active'; // skip the walk-in entirely — appear instantly, ready to draw
   activeEnemy = e;
 }
 
@@ -1847,6 +1944,8 @@ function activateNext(){
   e.stepIndex=0;
   e.timer=e.timeLimit;
   activeEnemy = e;
+  if(e.flicker) showGimmickAlert('패턴을 외우세요!', '#f0c419');
+  else if(e.reverse) showGimmickAlert('반대 순서로!', '#ff6b81');
 }
 
 // Places orb targets at fully random points scattered across the play
@@ -1989,6 +2088,7 @@ function drawFinisherFx(){
 
 function handleBossPhaseResolved(wasSuccess, resolvedEnemy){
   if(!bossFight) return;
+  const thisFight = bossFight;
   if(wasSuccess){
     bossFight.hitsLanded++;
     bossFight.retryTemplate = null;
@@ -2024,7 +2124,12 @@ function handleBossPhaseResolved(wasSuccess, resolvedEnemy){
   }
   setTimeout(()=>{
     const liveState = testState.active ? 'testing' : 'playing';
-    if(gameState===liveState && bossFight){
+    // identity check (not just truthiness) — guards against the extremely
+    // unlikely case where this timeout outlives its own boss fight (e.g. a
+    // fast retry-after-game-over) and a DIFFERENT bossFight has since been
+    // created; without this a stale timeout could push a leftover boss
+    // phase into a stage that shouldn't have one.
+    if(gameState===liveState && bossFight===thisFight){
       queue.push(spawnBossPhase(bossFight.retryTemplate, bossFight.forceGimmick, false));
       activateNext();
     }
@@ -2039,6 +2144,24 @@ function showBanner(text){
     el.style.transition='transform .28s cubic-bezier(.2,1.4,.4,1), opacity .2s';
     el.style.opacity='1'; el.style.transform='translate(-50%,-50%) scale(1)';
     setTimeout(()=>{ el.style.transition='opacity .5s'; el.style.opacity='0'; }, 650);
+  });
+}
+// Small top-edge callout for the flicker/reverse gimmicks — separate from
+// showBanner's big center-screen pop (which would be too heavy/frequent
+// for something that can show up on almost any wave), just enough to flag
+// "this one's different" before the player commits to a swipe.
+function showGimmickAlert(text, color){
+  const el = document.getElementById('gimmickAlert');
+  el.textContent = text;
+  el.style.color = color || '#fff';
+  el.style.transition='none'; el.style.opacity='0'; el.style.transform='translate(-50%,-14px)';
+  requestAnimationFrame(()=>{
+    el.style.transition='transform .25s cubic-bezier(.2,1.4,.4,1), opacity .2s';
+    el.style.opacity='1'; el.style.transform='translate(-50%,0)';
+    setTimeout(()=>{
+      el.style.transition='opacity .4s, transform .4s';
+      el.style.opacity='0'; el.style.transform='translate(-50%,-14px)';
+    }, 1400);
   });
 }
 function flashScreen(kind){
@@ -2218,6 +2341,21 @@ function succeedEnemy(){
 // resets progress on the SAME enemy so the player can retry from the top.
 // The enemy only actually dies via failEnemy('miss') when its timer
 // truly runs out (see update()).
+// A WRONG (mismatched swipe/shape/orb-order) no longer resets the whole
+// pattern back to step 0 — à la Google's "Magic Cat Academy": whatever
+// you've already cleared STAYS cleared (blade steps stay checked off,
+// already-tapped orbs stay gone — drawOrbTargets already skips t.hit
+// ones, so simply not touching tapTargets here is enough), you just pay
+// some HP and have to land the REMAINING steps before the same timer
+// runs out. This is why WRONG_DMG_MULT is deliberately smaller than a
+// full timeout MISS (see failEnemy/MISS_DMG_MULT below) — losing progress
+// used to BE the punishment, so extra bonus damage on top made sense;
+// now that progress is preserved, the damage alone needs to be the
+// deterrent, and a real "you never even got a hit in" MISS should still
+// hurt noticeably more than a single misstep.
+const WRONG_DMG_MULT = 0.5;
+const MISS_DMG_MULT = 1.0;
+
 function wrongAttemptRetry(){
   const e = activeEnemy;
   if(!e) return;
@@ -2239,19 +2377,18 @@ function wrongAttemptRetry(){
     testState.stats.wrong++;
     updateTestHUD();
   } else {
-    const dmg = e.dmg * 1.35;
+    const dmg = e.dmg * WRONG_DMG_MULT;
     hp = clamp(hp - dmg, 0, PLAYER_MAX_HP);
     combo = 0;
     runStats.attempts++; runStats.wrong++;
     stageStats.attempts++; stageStats.wrong++;
-    damageVignette(1.15);
+    damageVignette(0.7);
     updateHUD();
     if(hp<=0){ setTimeout(gameOver, 260); return; }
   }
 
-  e.stepIndex = 0;
+  // stepIndex / tapTargets are intentionally left untouched — progress is kept.
   patternPopT = 0;
-  if(e.typeKey==='orb') assignAllTapTargets(e);
 }
 
 // The enemy's timer ran out — this is the only path that actually kills a
@@ -2279,7 +2416,7 @@ function failEnemy(){
     testState.stats.miss++;
     updateTestHUD();
   } else {
-    hp = clamp(hp - e.dmg, 0, PLAYER_MAX_HP);
+    hp = clamp(hp - e.dmg*MISS_DMG_MULT, 0, PLAYER_MAX_HP);
     combo = 0;
     if(!e.isBoss) stageMobsCleared++;
     runStats.attempts++; runStats.miss++;
@@ -2396,7 +2533,22 @@ function resolveShapeStroke(){
   if(!strokeModeActive()){ strokeMode=false; return; }
   const e = activeEnemy;
   const step = e.pattern[e.stepIndex];
-  const { dist, bend, pass } = evalShapeMatch(shapeStrokePoints, step.shape);
+  const { dist, bend, seqOk, propOk, pass } = evalShapeMatch(shapeStrokePoints, step.shape);
+  if(e.bareTest){
+    // "그냥 성공/실패만" test mode — no enemy lifecycle, no HP/score/timer,
+    // just grade the stroke against the same target and immediately let
+    // you try again. Shows the same debug numbers as the live overlay so
+    // you can see exactly which check failed.
+    testState.stats.attempts++;
+    if(pass) testState.stats.perfect++; else testState.stats.wrong++;
+    testState.lastDebug = { expected: step.shape, dir: `d ${dist.toFixed(3)} · bend ${bend.toFixed(3)} · seq ${seqOk?'OK':'X'} · prop ${propOk?'OK':'X'}`, earlyDir:null, diff:null,
+      result: pass ? 'MATCH' : 'MISMATCH' };
+    spawnFloatText(W/2, H*0.28, pass ? '성공!' : '실패', pass ? '#39d98a' : '#ff6b81');
+    updateTestHUD();
+    strokeMode = false;
+    shapeStrokePoints = [];
+    return;
+  }
   if(testState.active){
     testState.lastDebug = { expected: step.shape, dir: 'd '+dist.toFixed(3)+' / bend '+bend.toFixed(3), earlyDir:null, diff:null,
       result: pass ? 'MATCH' : 'MISMATCH' };
@@ -2532,108 +2684,55 @@ function update(dtReal){
 
 /* ============================== RENDER: SCENE ============================== */
 
+// Background art — supplied by the user as finished crayon-style images
+// rather than drawn procedurally (see BG_SKY_IMG/BG_ROAD_IMG below).
+const BG_SKY_IMG = new Image();  BG_SKY_IMG.src  = 'assets/bg/sky.png';
+const BG_ROAD_IMG = new Image(); BG_ROAD_IMG.src = 'assets/bg/road.png';
+function skyImgReady(){ return BG_SKY_IMG.complete && BG_SKY_IMG.naturalWidth>0; }
+function roadImgReady(){ return BG_ROAD_IMG.complete && BG_ROAD_IMG.naturalWidth>0; }
+
 function drawBackground(){
   const horizonY = H*HORIZON_Y_RATIO;
-  const theme = currentTheme();
-  const sky = ctx.createLinearGradient(0,0,0,horizonY);
-  sky.addColorStop(0,theme.skyTop); sky.addColorStop(1,theme.skyBottom);
-  ctx.fillStyle=sky; ctx.fillRect(0,0,W,horizonY);
-
-  if(theme.star) drawStars(horizonY);
-
-  // soft colored nebula wash — the biggest single fix for the sky feeling
-  // flat/monotonous, since it's a strong per-stage color cue even before
-  // you consciously notice the sky/ground palette shifted
-  ctx.save();
-  const neb = ctx.createRadialGradient(W*0.7, horizonY*0.25, 10, W*0.7, horizonY*0.25, W*0.75);
-  neb.addColorStop(0, theme.glow);
-  neb.addColorStop(1, 'rgba(0,0,0,0)');
-  ctx.fillStyle = neb;
-  ctx.fillRect(0,0,W,horizonY);
-  ctx.restore();
-
-  drawClouds(horizonY);
-
-  // ambient wind streaks — always animating a little so the world never feels static
-  ctx.save();
-  ctx.strokeStyle='rgba(255,255,255,0.06)'; ctx.lineWidth=1.5;
-  const windOff = (now()/1000*40) % 60;
-  for(let x=-windOff; x<W+60; x+=60){
-    ctx.beginPath();
-    ctx.moveTo(x, horizonY*0.25); ctx.lineTo(x+26, horizonY*0.25);
-    ctx.stroke();
-  }
-  ctx.restore();
-
-  // far mountain silhouettes (slow parallax layer)
-  ctx.fillStyle=theme.farMtn;
-  const offFar = (distance*1.1)%160;
-  for(let x=-offFar; x<W+160; x+=160){
-    const h = 24+((Math.sin(x*0.017)+1)/2)*36;
-    ctx.beginPath();
-    ctx.moveTo(x,horizonY); ctx.lineTo(x+52,horizonY-h); ctx.lineTo(x+104,horizonY);
-    ctx.closePath(); ctx.fill();
-  }
-
-  // nearer silhouette layer (faster parallax, sells running speed)
-  ctx.fillStyle=theme.nearMtn;
-  const offNear = (distance*2.6)%140;
-  for(let x=-offNear; x<W+140; x+=140){
-    const h = 30+((Math.sin(x*0.02)+1)/2)*46;
-    ctx.beginPath();
-    ctx.moveTo(x,horizonY); ctx.lineTo(x+45,horizonY-h); ctx.lineTo(x+90,horizonY);
-    ctx.closePath(); ctx.fill();
-  }
-
-  const ground = ctx.createLinearGradient(0,horizonY,0,H);
-  ground.addColorStop(0,theme.ground[0]); ground.addColorStop(1,theme.ground[1]);
-  ctx.fillStyle=ground; ctx.fillRect(0,horizonY,W,H-horizonY);
-
-  drawRoad(horizonY, theme);
+  drawSkyImage(horizonY);
+  drawRoad(horizonY);
 }
 
-// Small twinkling stars scattered across the upper sky — cheap, cheerful
-// detail that also reinforces which stage you're in (some themes skip them).
-let starField = null;
-function drawStars(horizonY){
-  if(!starField || starField.w!==W || starField.h!==horizonY){
-    const n = 46;
-    const pts = [];
-    for(let i=0;i<n;i++){
-      pts.push({ x: Math.random()*W, y: Math.random()*horizonY*0.82, r: rand(0.6,1.8), phase: rand(0,Math.PI*2), speed: rand(0.6,1.4) });
-    }
-    starField = { w:W, h:horizonY, pts };
+// The sky image (hills+sun+clouds baked into one picture) is cover-scaled
+// to fill the area above the horizon, then swayed slowly side to side —
+// on a TIME clock, not tied to player distance — instead of being tiled
+// end-to-end. It's one finished scene, not a repeatable strip: the sun and
+// clouds are drawn at fixed spots in it, so infinitely tiling it would
+// make the same sun reappear over and over at a regular interval as the
+// player runs. A slow drift never needs to loop/wrap at all, so that
+// never happens; overscanning it a bit means the sway never reveals an edge.
+function drawSkyImage(horizonY){
+  if(!skyImgReady()){
+    ctx.fillStyle = '#cfe8f7';
+    ctx.fillRect(0,0,W,horizonY);
+    return;
   }
-  ctx.save();
-  for(const s of starField.pts){
-    const tw = 0.5 + 0.5*Math.sin(now()/1000*s.speed + s.phase);
-    ctx.globalAlpha = 0.25 + tw*0.55;
-    ctx.fillStyle = '#fff6cf';
-    ctx.beginPath(); ctx.arc(s.x, s.y, s.r, 0, Math.PI*2); ctx.fill();
-  }
-  ctx.restore();
+  const img = BG_SKY_IMG;
+  const areaW = W, areaH = horizonY;
+  const scale = Math.max(areaW/img.width, areaH/img.height) * 1.18; // overscan so sway never shows an edge
+  const dw = img.width*scale, dh = img.height*scale;
+  const swayRange = Math.max(0, dw-areaW);
+  const sway = swayRange>0 ? (0.5+0.5*Math.sin(now()/1000*0.045)) * swayRange : 0;
+  const dx = -sway;
+  const dy = areaH - dh; // anchor the image's own hill-bottoms to the horizon line
+  ctx.drawImage(img, dx, dy, dw, dh);
 }
 
-// Soft rounded cloud silhouettes drifting slowly across the sky.
-function drawClouds(horizonY){
-  ctx.save();
-  ctx.fillStyle = 'rgba(255,255,255,0.05)';
-  const drift = (now()/1000*8) % (W+300);
-  for(let i=0;i<3;i++){
-    const baseX = ((i*260) - drift + 300) % (W+300) - 150;
-    const y = horizonY*0.22 + i*horizonY*0.16;
-    const scale = 0.8 + (i%2)*0.35;
-    ctx.beginPath();
-    ctx.ellipse(baseX, y, 46*scale, 14*scale, 0, 0, Math.PI*2);
-    ctx.ellipse(baseX+30*scale, y+3*scale, 30*scale, 11*scale, 0, 0, Math.PI*2);
-    ctx.ellipse(baseX-28*scale, y+4*scale, 26*scale, 10*scale, 0, 0, Math.PI*2);
-    ctx.fill();
-  }
-  ctx.restore();
-}
-
-function drawRoad(horizonY, theme){
-  theme = theme || currentTheme();
+// The road image (dirt path + grassy/flowered shoulders) is tiled as a
+// stack of perspective-scaled horizontal bands from the horizon down to
+// the camera — same u/posForU perspective math the enemies and lane
+// markers already use — so it narrows toward the horizon and widens near
+// the camera like the old procedural trapezoid did, just textured with
+// the real artwork instead of a flat color. The SOURCE slice scrolls with
+// `distance` so the texture flows toward the camera as you run; the
+// DESTINATION geometry (perspective widths) doesn't need to scroll at all,
+// which is what keeps this from ever needing to seamlessly tile — it's
+// just sampling a different vertical slice of one square image each frame.
+function drawRoad(horizonY){
   const topHalf = W*0.035, botHalf = W*0.62;
   const cx = W/2;
   ctx.save();
@@ -2643,42 +2742,32 @@ function drawRoad(horizonY, theme){
   ctx.lineTo(cx+botHalf, H);
   ctx.lineTo(cx-botHalf, H);
   ctx.closePath();
-  const rg = ctx.createLinearGradient(0,horizonY,0,H);
-  rg.addColorStop(0,theme.road[0]); rg.addColorStop(0.6,theme.road[1]); rg.addColorStop(1,theme.road[2]);
-  ctx.fillStyle=rg; ctx.fill();
-
-  ctx.strokeStyle=theme.accent; ctx.lineWidth=2;
-  ctx.beginPath(); ctx.moveTo(cx-topHalf,horizonY); ctx.lineTo(cx-botHalf,H); ctx.stroke();
-  ctx.beginPath(); ctx.moveTo(cx+topHalf,horizonY); ctx.lineTo(cx+botHalf,H); ctx.stroke();
-
   ctx.clip();
-  const tieCount = 14;
-  const spacing = 1/tieCount;
-  const scrollOff = (distance*0.16) % spacing;
-  ctx.strokeStyle='rgba(255,255,255,0.10)'; ctx.lineWidth=2;
-  for(let i=-1;i<=tieCount;i++){
-    const u = i*spacing + scrollOff;
-    if(u<0||u>1) continue;
-    const p = posForU(u);
-    const halfW = topHalf + (botHalf-topHalf)*Math.pow(u,EASE_POW);
-    ctx.beginPath();
-    ctx.moveTo(cx-halfW, p.y); ctx.lineTo(cx+halfW, p.y);
-    ctx.stroke();
-  }
 
-  // roadside marker posts — fast near-layer parallax for a strong sense of speed
-  const postSpacing = 1/8;
-  const postScroll = (distance*0.22) % postSpacing;
-  for(let i=-1;i<=8;i++){
-    const u = i*postSpacing + postScroll;
-    if(u<0.12||u>1) continue;
-    const p = posForU(u);
-    const halfW = topHalf + (botHalf-topHalf)*Math.pow(u,EASE_POW);
-    const postH = 10 + 46*p.scale;
-    [cx-halfW-6*p.scale, cx+halfW+6*p.scale].forEach(px=>{
-      ctx.fillStyle = theme.accent;
-      ctx.fillRect(px-1.5*p.scale, p.y-postH, 3*p.scale, postH);
-    });
+  if(roadImgReady()){
+    const img = BG_ROAD_IMG;
+    const bands = 16;
+    const spacing = 1/bands;
+    const sliceH = img.height/bands;
+    const scrollPx = (distance*40) % img.height;
+    for(let i=-1;i<=bands;i++){
+      const u0 = i*spacing, u1 = u0+spacing;
+      if(u1<0 || u0>1) continue;
+      const uc0 = clamp(u0,0,1), uc1 = clamp(u1,0,1);
+      const p0 = posForU(uc0), p1 = posForU(uc1);
+      const halfW0 = topHalf + (botHalf-topHalf)*Math.pow(uc0,EASE_POW);
+      const halfW1 = topHalf + (botHalf-topHalf)*Math.pow(uc1,EASE_POW);
+      const dw = halfW0+halfW1;
+      const dy = p0.y, dh = Math.max(1, p1.y-p0.y);
+      const dx = cx-dw/2;
+      let sy = (i*sliceH - scrollPx) % img.height;
+      if(sy<0) sy += img.height;
+      const sh = Math.min(sliceH, img.height-sy); // never wrap mid-slice — just draws a shorter slice that frame
+      ctx.drawImage(img, 0, sy, img.width, sh, dx, dy, dw, dh);
+    }
+  } else {
+    ctx.fillStyle = '#e3d3ae';
+    ctx.fillRect(0,0,W,H);
   }
   ctx.restore();
 }
@@ -2757,10 +2846,6 @@ function drawEnemyAt(e, x, y, scale, alpha){
     ctx.restore();
   }
 
-  ctx.fillStyle='rgba(255,255,255,0.92)';
-  ctx.font = `700 ${e.isBoss?18:14}px Rajdhani, sans-serif`;
-  ctx.textAlign='center';
-  ctx.fillText(e.name, 0, 22);
   ctx.restore();
 }
 
@@ -2917,6 +3002,7 @@ function drawOrbTargets(e){
 
 function drawActiveEnemy(){
   const e = activeEnemy;
+  if(e.bareTest){ drawBareShapeTarget(e); return; }
   const pos = currentEnemyScreenPos(e);
   drawEnemyAt(e, pos.x, pos.y, pos.scale, 1);
 
@@ -2926,12 +3012,31 @@ function drawActiveEnemy(){
   } else if(pos.u>0.38){
     ctx.save();
     ctx.globalAlpha = clamp((pos.u-0.38)/0.12,0,1);
-    ctx.fillStyle='#fff';
-    ctx.font=`700 ${20*Math.max(pos.scale,0.5)}px Rajdhani, sans-serif`;
+    ctx.fillStyle='#e14b3f';
+    ctx.font=`900 ${20*Math.max(pos.scale,0.5)}px Rajdhani, sans-serif`;
     ctx.textAlign='center';
+    ctx.shadowColor='rgba(255,255,255,0.9)'; ctx.shadowBlur=6;
     ctx.fillText('!', pos.x, pos.y - 46*pos.scale);
     ctx.restore();
   }
+}
+
+// No enemy, no HP, no timer — just the target shape to trace, dead center,
+// and a pass/fail readout after each attempt (see resolveShapeStroke).
+function drawBareShapeTarget(e){
+  const step = e.pattern[0];
+  const size = Math.min(W,H)*0.36;
+  const cy = H*0.42;
+  ctx.save();
+  ctx.translate(W/2, cy);
+  drawShapeVectorIcon(step.shape, size, SHAPE_COLORS[step.shape]||'#fff');
+  ctx.restore();
+  ctx.save();
+  ctx.fillStyle='rgba(255,255,255,0.65)';
+  ctx.font="700 14px Rajdhani, sans-serif";
+  ctx.textAlign='center';
+  ctx.fillText('그려서 테스트하세요 — 몇 번이든 다시 그릴 수 있어요', W/2, cy + size*0.62 + 28);
+  ctx.restore();
 }
 
 // wantAttacking controls which dying enemies this pass draws:
